@@ -18,15 +18,16 @@ import { CalendarCard } from "./cards/CalendarCard";
 import { JournalCard } from "./cards/JournalCard";
 import { PomodoroCard } from "./cards/PomodoroCard";
 import { RoutinesCard } from "./cards/RoutinesCard";
+import { HabitsCard } from "./cards/HabitsCard";
 
 // Define card types that can be added to the dashboard
 const CARD_TYPES = [
-  { id: "calendar", label: "Calendar", icon: Calendar, color: "bg-lime-400", component: CalendarCard },
-  { id: "todos", label: "Today's Todos", icon: CheckSquare, color: "bg-violet-400", component: TodoCard },
-  { id: "habits", label: "Active Habits", icon: GitCommit, color: "bg-orange-400", component: () => import("./cards/HabitsCard").then(mod => mod.HabitsCard) },
-  { id: "journal", label: "Journal Prompt", icon: BookOpen, color: "bg-rose-400", component: JournalCard },
-  { id: "pomodoro", label: "Pomodoro Timer", icon: Timer, color: "bg-amber-400", component: PomodoroCard },
-  { id: "routines", label: "Today's Routine", icon: GitBranch, color: "bg-indigo-400", component: RoutinesCard },
+  { id: "calendar", label: "Calendar", icon: Calendar, color: "bg-lime-400", Component: CalendarCard },
+  { id: "todos", label: "Today's Todos", icon: CheckSquare, color: "bg-violet-400", Component: TodoCard },
+  { id: "habits", label: "Active Habits", icon: GitCommit, color: "bg-orange-400", Component: HabitsCard },
+  { id: "journal", label: "Journal Prompt", icon: BookOpen, color: "bg-rose-400", Component: JournalCard },
+  { id: "pomodoro", label: "Pomodoro Timer", icon: Timer, color: "bg-amber-400", Component: PomodoroCard },
+  { id: "routines", label: "Today's Routine", icon: GitBranch, color: "bg-indigo-400", Component: RoutinesCard },
 ];
 
 const DEFAULT_LAYOUT = {
@@ -65,6 +66,7 @@ export function BentoGrid() {
             if (!cardInfo) return null;
             return {
               ...cardInfo,
+              Component: cardInfo.Component,
               order: value.order ?? 0,
               size: value.size ?? "medium"
             };
@@ -80,6 +82,7 @@ export function BentoGrid() {
             if (!cardInfo) return null;
             return {
               ...cardInfo,
+              Component: cardInfo.Component,
               order: value.order,
               size: value.size
             };
@@ -119,6 +122,7 @@ export function BentoGrid() {
 
       const newCard = {
         ...cardInfo,
+        Component: cardInfo.Component,
         order: cards.length,
         size: "medium"
       };
@@ -227,10 +231,8 @@ export function BentoGrid() {
 
                 {/* Card content - render actual component if available */}
                 <div className="flex-1 overflow-hidden">
-                  {card.component && typeof card.component === "function" ? (
-                    <div className="w-full h-full">
-                      {card.component}
-                    </div>
+                  {card.Component ? (
+                    <card.Component />
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <p className="text-sm text-muted-foreground">

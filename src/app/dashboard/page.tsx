@@ -8,7 +8,6 @@ import { useUser } from "@/lib/supabase/user";
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const name = user?.user_metadata?.full_name?.split(" ")[0] ?? "there";
 
   return (
     <main className="flex h-[calc(100vh-64px)]">

@@ -51,7 +51,8 @@ export function SidebarNav() {
       supabase
         .from("profiles")
         .update({ theme_prefs: { theme: newTheme } })
-        .eq("id", user.id);
+        .eq("id", user.id)
+        .then();
     }
   };
 

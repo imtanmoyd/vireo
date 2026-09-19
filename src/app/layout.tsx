@@ -17,7 +17,11 @@ export const metadata: Metadata = {
   description: "A calmer home base for your routines, focus, and daily wins.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
