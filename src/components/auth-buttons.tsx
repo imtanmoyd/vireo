@@ -12,6 +12,21 @@ const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Translate cryptic Supabase auth errors into actionable messages.
+function friendlyAuthError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("rate limit") && normalized.includes("email")) {
+    return "Too many emails sent. The built-in Supabase email service allows only 2 per hour — set up custom SMTP (Authentication → Emails) or wait a while and try again.";
+  }
+  if (normalized.includes("not authorized")) {
+    return "The built-in Supabase email service only emails project team members. Configure custom SMTP (Authentication → Emails) to email any address.";
+  }
+  if (normalized.includes("60 seconds")) {
+    return "Please wait about a minute before requesting another sign-in link.";
+  }
+  return message;
+}
+
 export function AuthButtons() {
   const [provider, setProvider] = useState<"google" | "twitter" | null>(null);
   const [email, setEmail] = useState("");
@@ -67,7 +82,7 @@ export function AuthButtons() {
         },
       });
       if (otpError) {
-        setError(otpError.message);
+        setError(friendlyAuthError(otpError.message));
       } else {
         setEmailSent(true);
         setEmail("");
@@ -75,7 +90,7 @@ export function AuthButtons() {
     } catch (err) {
       setError(
         err instanceof Error
-          ? err.message
+          ? friendlyAuthError(err.message)
           : "Could not send the sign-in link. Please try again.",
       );
     } finally {
