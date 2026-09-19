@@ -10,6 +10,17 @@ import { NextResponse, type NextRequest } from "next/server";
  * default export). See docs: app/api-reference/file-conventions/proxy.
  */
 export async function proxy(request: NextRequest) {
+  const { searchParams, pathname } = request.nextUrl;
+
+  // Supabase email links fall back to the configured Site URL with the auth
+  // code when the intended redirect is not allowlisted. Recover gracefully:
+  // send any root-level ?code= (and error=) straight to /auth/callback.
+  if (pathname === "/" && (searchParams.has("code") || searchParams.has("error"))) {
+    const callbackUrl = new URL("/auth/callback", request.url);
+    callbackUrl.search = searchParams.toString();
+    return NextResponse.redirect(callbackUrl);
+  }
+
   const response = NextResponse.next({ request });
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
