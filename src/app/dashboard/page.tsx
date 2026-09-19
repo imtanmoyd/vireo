@@ -1,13 +1,10 @@
-import Link from "next/link";
-import { ArrowUpRight, Leaf } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarNav } from "@/components/dashboard/SidebarNav";
 import { BentoGrid } from "@/components/dashboard/BentoGrid";
-import { useUser } from "@/lib/supabase/user";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.auth.getUser();
 
   return (
     <main className="flex h-[calc(100vh-64px)]">
