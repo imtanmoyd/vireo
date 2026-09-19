@@ -13,6 +13,10 @@ export function useUser() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
       setLoading(false);
+    }).catch(() => {
+      // Supabase unreachable / not configured — show signed-out state.
+      setUser(null);
+      setLoading(false);
     });
 
     // Listen for auth changes
