@@ -105,6 +105,17 @@ h1 { font-size: clamp(52px, 6.2vw, 94px); line-height: .94; letter-spacing: -.07
 .google-g { color: #4285f4; font-size: 18px; font-weight: 900; }
 .fine-print { color: #a1a39d; font-size: 11px; margin-top: 16px; }
 .auth-error { color: #b33c3c; font-size: 12px; }
+.auth-success { display: flex; align-items: center; gap: 6px; color: #4d7c0f; font-size: 12px; }
+.email-row { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.email-input {
+  height: 46px; border-radius: 13px; border: 1px solid var(--line); background: #fff;
+  padding: 0 14px; font-size: 14px; color: #161616; outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.email-input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(132, 204, 22, .18); }
+.email-input:disabled { opacity: .6; }
+.email-input::placeholder { color: #a1a39d; }
+.email-button { background: var(--lime); color: #1b2415; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
