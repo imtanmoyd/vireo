@@ -5,6 +5,7 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
   --color-lime: var(--lime);
   --color-violet: var(--violet);
   --color-rose: var(--rose);
@@ -17,6 +18,8 @@
   --background: #f5f5f0;
   --foreground: #161616;
   --muted: #767772;
+  --muted-foreground: #5f6158;
+  --accent: #4d7c0f;
   --line: #deded5;
   --lime: #c8f169;
   --violet: #7667e8;
@@ -28,11 +31,7 @@
 
 @layer utilities {
   .text-muted-foreground {
-    @apply text-gray-600;
-  }
-
-  .dark .text-muted-foreground {
-    @apply text-gray-400;
+    color: var(--muted-foreground);
   }
 }
 
@@ -275,6 +274,8 @@ h1 { font-size: clamp(52px, 6.2vw, 94px); line-height: .94; letter-spacing: -.07
   --background: #0a0a0a;
   --foreground: #f5f5f0;
   --muted: #a1a39d;
+  --muted-foreground: #a8aaa3;
+  --accent: #bef264;
   --line: #2a2a29;
 }
 

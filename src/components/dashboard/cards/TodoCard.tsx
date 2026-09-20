@@ -29,9 +29,13 @@ export function TodoCard() {
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setTodos(data);
+    if (error) {
+      // Surface query failures (missing table, RLS rejection, etc.) — they
+      // would otherwise render as a mysteriously empty card.
+      console.error("[TodoCard] Failed to load todos:", error.message);
+      return;
     }
+    setTodos(data ?? []);
   };
 
   const handleAddTodo = async (e: React.FormEvent) => {
@@ -53,7 +57,9 @@ export function TodoCard() {
         priority: 0
       });
 
-    if (!error) {
+    if (error) {
+      console.error("[TodoCard] Failed to add todo:", error.message);
+    } else {
       setNewTodoTitle("");
       setNewTodoDueDate("");
       setIsAdding(false);
@@ -131,11 +137,23 @@ export function TodoCard() {
           </div>
           <span className="font-semibold text-lg">Today's Todos</span>
         </div>
-        <span className="text-sm text-lime-400 font-medium">{completedCount}/{todos.length}</span>
+        <span className="text-sm font-medium text-accent">{completedCount}/{todos.length}</span>
       </div>
 
       {/* Todo List */}
       <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+        {todos.length === 0 && !isAdding && (
+          <div className="flex flex-col items-center justify-center h-full space-y-3 py-8">
+            <CheckSquare size={32} className="text-muted-foreground" />
+            <p className="text-sm text-muted-foreground text-center">
+              No todos yet
+            </p>
+            <p className="text-xs text-muted-foreground max-w-[200px] text-center">
+              Add your first task below to start planning your day.
+            </p>
+          </div>
+        )}
+
         {todos.map((todo, index) => (
           <div
             key={todo.id}
@@ -203,7 +221,7 @@ export function TodoCard() {
       {!isAdding && (
         <button
           onClick={() => setIsAdding(true)}
-          className="flex items-center space-x-2 p-2 rounded-md text-lime-400 hover:bg-lime-400/10 transition-all"
+          className="flex items-center space-x-2 p-2 rounded-md text-accent hover:bg-lime-400/10 transition-all"
         >
           <Plus size={16} />
           <span className="text-sm font-medium">Add todo</span>

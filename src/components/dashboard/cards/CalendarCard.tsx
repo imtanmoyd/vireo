@@ -52,9 +52,11 @@ export function CalendarCard() {
       .eq("user_id", user.id)
       .order("start_time", { ascending: true });
 
-    if (!error && data) {
-      setEvents(data);
+    if (error) {
+      console.error("[CalendarCard] Failed to load events:", error.message);
+      return;
     }
+    setEvents(data ?? []);
   };
 
   const handleAddEvent = async (e: React.FormEvent) => {
@@ -142,7 +144,7 @@ export function CalendarCard() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <div className="h-8 w-8 flex items-center justify-center bg-lime-400/20 dark:bg-lime-400/10 rounded-lg">
-            <CalendarIcon size={18} className="text-lime-400" />
+            <CalendarIcon size={18} className="text-accent" />
           </div>
           <span className="font-semibold text-lg">Calendar</span>
         </div>
@@ -200,7 +202,7 @@ export function CalendarCard() {
             >
               <div>{day}</div>
               {dayEvents.length > 0 && (
-                <div className="text-xs text-lime-400 font-semibold">{dayEvents.length}•</div>
+                <div className="text-xs font-semibold text-accent">{dayEvents.length}•</div>
               )}
             </button>
           );
@@ -246,7 +248,7 @@ export function CalendarCard() {
           {!isAddingEvent && (
             <button
               onClick={() => setIsAddingEvent(true)}
-              className="mt-2 flex items-center space-x-1 p-2 rounded text-lime-400 hover:bg-lime-400/10 text-xs font-medium w-full justify-center"
+              className="mt-2 flex items-center space-x-1 p-2 rounded text-accent hover:bg-lime-400/10 text-xs font-medium w-full justify-center"
             >
               <Plus size={14} />
               <span>Add event</span>

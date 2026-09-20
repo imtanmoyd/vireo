@@ -44,6 +44,11 @@ export function JournalCard() {
       .eq("entry_date", today)
       .single();
 
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 = no rows, which is normal for a new day.
+      console.error("[JournalCard] Failed to load entry:", error.message);
+    }
+
     if (!error && data) {
       setTodayEntry(data);
       setContent(data.content || "");
@@ -153,14 +158,14 @@ export function JournalCard() {
           {!isEditing ? (
             <>
               <div className="flex items-center space-x-1">
-                <CurrentMoodIcon size={16} className="text-lime-400" />
-                <span className="text-xs text-lime-400">
+                <CurrentMoodIcon size={16} className="text-accent" />
+                <span className="text-xs text-accent">
                   {MOODS.find(m => m.id === selectedMood)?.label}
                 </span>
               </div>
               <button
                 onClick={() => setIsEditing(true)}
-                className="p-1 rounded hover:bg-white/10 dark:hover:bg-black/10 text-lime-400"
+                className="p-1 rounded hover:bg-white/10 dark:hover:bg-black/10 text-accent"
                 aria-label="Edit entry"
               >
                 <Edit size={14} />

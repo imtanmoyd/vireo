@@ -55,16 +55,19 @@ export function RoutinesCard() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setRoutines(data);
-      // Check if today's day matches any routine's active days
-      const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
-      const todayRoutine = data.find((routine) =>
-        routine.days_active?.includes(today)
-      );
-      if (todayRoutine) {
-        setActiveRoutine(todayRoutine);
-      }
+    if (error) {
+      console.error("[RoutinesCard] Failed to load routines:", error.message);
+      return;
+    }
+    setRoutines(data ?? []);
+
+    // Check if today's day matches any routine's active days
+    const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
+    const todayRoutine = data.find((routine) =>
+      routine.days_active?.includes(today)
+    );
+    if (todayRoutine) {
+      setActiveRoutine(todayRoutine);
     }
   };
 
@@ -245,7 +248,7 @@ export function RoutinesCard() {
                       {activeRoutine.steps[currentStepIndex].title}
                     </div>
                   </div>
-                  <div className="text-2xl font-bold text-lime-400">
+                  <div className="text-2xl font-bold text-accent">
                     {formatTime(timeLeft)}
                   </div>
                 </div>
@@ -307,7 +310,7 @@ export function RoutinesCard() {
                       <div className="flex items-center space-x-3">
                         {index < currentStepIndex ? (
                           <div className="h-6 w-6 flex items-center justify-center bg-lime-400/20 rounded-full">
-                            <Check size={12} className="text-lime-400" />
+                            <Check size={12} className="text-accent" />
                           </div>
                         ) : (
                           <div className="h-6 w-6 flex items-center justify-center border border-white/30 dark:border-black/30 rounded-full">
@@ -384,7 +387,7 @@ export function RoutinesCard() {
           {!showNewRoutine ? (
             <button
               onClick={() => setShowNewRoutine(true)}
-              className="mt-auto flex items-center space-x-2 p-3 rounded-md bg-white/5 dark:bg-black/5 hover:bg-white/10 dark:hover:bg-black/10 text-lime-400 font-medium"
+              className="mt-auto flex items-center space-x-2 p-3 rounded-md bg-white/5 dark:bg-black/5 hover:bg-white/10 dark:hover:bg-black/10 text-accent font-medium"
             >
               <Plus size={16} />
               <span>Create new routine</span>

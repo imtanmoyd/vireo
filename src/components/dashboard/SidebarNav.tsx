@@ -59,16 +59,16 @@ export function SidebarNav() {
   if (loading) return <div>Loading...</div>;
 
   return (
-    <aside className={`fixed left-0 top-0 bottom-0 w-16 bg-white/5 dark:bg-black/5 backdrop-blur-md
+    <aside className={`sticky top-0 h-screen shrink-0 bg-white/5 dark:bg-black/5 backdrop-blur-md
       transition-all duration-300 ease-in-out overflow-hidden
-      ${isOpen ? "w-64" : "w-16"} z-50 border-r border-white/10 dark:border-black/10`}>
+      ${isOpen ? "w-64" : "w-16"} border-r border-white/10 dark:border-black/10`}>
       <div className="flex h-full flex-col p-4 space-x-3">
         {/* Brand */}
         <div className="flex items-center space-x-3">
           <span className="flex h-8 w-8 items-center justify-center bg-lime-400/20 dark:bg-lime-400/10 rounded-lg">
             <Calendar size={20} />
           </span>
-          <span className={`hidden ${isOpen ? "block" : "none"} font-bold text-xl`}>
+          <span className={`${isOpen ? "block" : "hidden"} font-bold text-xl`}>
             Vireo
           </span>
         </div>
@@ -84,7 +84,7 @@ export function SidebarNav() {
             `}
           >
             <Calendar size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Calendar</span>
+            <span className={isOpen ? "block" : "hidden"}>Calendar</span>
           </Link>
 
           <Link
@@ -96,7 +96,7 @@ export function SidebarNav() {
             `}
           >
             <CheckSquare size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Todos</span>
+            <span className={isOpen ? "block" : "hidden"}>Todos</span>
           </Link>
 
           <Link
@@ -108,7 +108,7 @@ export function SidebarNav() {
             `}
           >
             <BookOpen size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Journal</span>
+            <span className={isOpen ? "block" : "hidden"}>Journal</span>
           </Link>
 
           <Link
@@ -120,7 +120,7 @@ export function SidebarNav() {
             `}
           >
             <GitCommit size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Habits</span>
+            <span className={isOpen ? "block" : "hidden"}>Habits</span>
           </Link>
 
           <Link
@@ -132,7 +132,7 @@ export function SidebarNav() {
             `}
           >
             <GitBranch size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Routines</span>
+            <span className={isOpen ? "block" : "hidden"}>Routines</span>
           </Link>
 
           <Link
@@ -144,7 +144,7 @@ export function SidebarNav() {
             `}
           >
             <Timer size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Pomodoro</span>
+            <span className={isOpen ? "block" : "hidden"}>Pomodoro</span>
           </Link>
         </nav>
 
@@ -155,7 +155,7 @@ export function SidebarNav() {
             className="flex items-center space-x-2 p-2 rounded-md hover:bg-lime-400/10 dark:hover:bg-lime-400/5"
           >
             {theme === "dark" ? <Sun size={24} /> : <Moon size={24} />}
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>
+            <span className={isOpen ? "block" : "hidden"}>
               {theme === "dark" ? "Light Mode" : "Dark Mode"}
             </span>
           </button>
@@ -172,7 +172,7 @@ export function SidebarNav() {
             className="flex items-center space-x-2 p-2 rounded-md hover:bg-lime-400/10 dark:hover:bg-lime-400/5"
           >
             <LogOut size={24} />
-            <span className={`hidden ${isOpen ? "block" : "none"}}`}>Logout</span>
+            <span className={isOpen ? "block" : "hidden"}>Logout</span>
           </Link>
         </div>
       </div>

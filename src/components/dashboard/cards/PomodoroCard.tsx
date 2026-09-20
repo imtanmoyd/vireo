@@ -182,7 +182,7 @@ export function PomodoroCard() {
             <div className="text-5xl font-bold tracking-tight mb-2">
               {formatTime(timeLeft)}
             </div>
-            <div className="text-sm font-semibold text-lime-400">
+            <div className="text-sm font-semibold text-accent">
               {getModeLabel()}
             </div>
           </div>
@@ -279,7 +279,7 @@ export function PomodoroCard() {
           <div className="text-xs text-muted-foreground">
             Today's completed sessions
           </div>
-          <div className="text-lg font-bold text-lime-400">
+          <div className="text-lg font-bold text-accent">
             {completedSessions}
           </div>
         </div>

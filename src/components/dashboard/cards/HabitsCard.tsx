@@ -51,9 +51,11 @@ export function HabitsCard() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setHabits(data);
+    if (error) {
+      console.error("[HabitsCard] Failed to load habits:", error.message);
+      return;
     }
+    setHabits(data ?? []);
   };
 
   const loadHabitLogs = async () => {
@@ -65,9 +67,11 @@ export function HabitsCard() {
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false });
 
-    if (!error && data) {
-      setHabitLogs(data);
+    if (error) {
+      console.error("[HabitsCard] Failed to load habit logs:", error.message);
+      return;
     }
+    setHabitLogs(data ?? []);
   };
 
   const handleCreateHabit = async (e: React.FormEvent) => {
@@ -306,7 +310,7 @@ export function HabitsCard() {
       {!showNewHabit ? (
         <button
           onClick={() => setShowNewHabit(true)}
-          className="flex items-center space-x-2 p-3 rounded-md text-lime-400 hover:bg-lime-400/10 transition-all w-full justify-center"
+          className="flex items-center space-x-2 p-3 rounded-md text-accent hover:bg-lime-400/10 transition-all w-full justify-center"
         >
           <Plus size={16} />
           <span className="font-medium">Add habit</span>

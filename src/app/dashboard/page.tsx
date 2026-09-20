@@ -16,15 +16,13 @@ export default async function DashboardPage() {
   await supabase.auth.getUser();
 
   return (
-    <main className="flex h-[calc(100vh-64px)]">
-      {/* Sidebar Navigation */}
+    <main className="flex h-screen">
+      {/* Sidebar Navigation — flex sibling, so it never overlays content */}
       <SidebarNav />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="flex h-full">
-          <BentoGrid />
-        </div>
+      <div className="flex-1 min-w-0 h-full">
+        <BentoGrid />
       </div>
     </main>
   );
