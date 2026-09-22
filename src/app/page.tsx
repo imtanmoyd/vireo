@@ -1,6 +1,6 @@
 import { ArrowUpRight, Check, Circle, Leaf, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { AuthButtons } from "@/components/auth-buttons";
+import { AuthPanel } from "@/components/auth/auth-panel";
 
 const habits = [
   { label: "Morning walk", color: "bg-lime-400", done: true },
@@ -32,7 +32,7 @@ export default function Home() {
             Vireo brings your routines, focus, and small daily wins into one
             calm home base. Less noise. More momentum.
           </p>
-          <AuthButtons />
+          <AuthPanel />
           <p className="fine-print">Free to start · Your data stays yours</p>
         </div>
 

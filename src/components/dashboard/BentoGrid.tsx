@@ -11,8 +11,8 @@ import {
   Plus,
   X
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import Link from "next/link";
+import { useAppStore } from "@/lib/data";
 import { TodoCard } from "./cards/TodoCard";
 import { CalendarCard } from "./cards/CalendarCard";
 import { JournalCard } from "./cards/JournalCard";
@@ -40,27 +40,23 @@ const DEFAULT_LAYOUT = {
 };
 
 export function BentoGrid() {
-  const { user } = useUser();
+  const { session, store, loading, isGuest } = useAppStore();
   const [cards, setCards] = useState<Array<any>>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
   const [selectedCardType, setSelectedCardType] = useState<string>("");
 
-  // Load layout from Supabase on mount
+  // Load the saved dashboard layout on mount (from the profile).
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
 
     const loadLayout = async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("dashboard_layout")
-        .eq("id", user.id)
-        .single();
+      const profile = await store.getProfile<{ dashboard_layout?: Record<string, any> } | null>();
+      const saved = profile?.dashboard_layout;
 
-      if (!error && data?.dashboard_layout && Object.keys(data.dashboard_layout).length > 0) {
+      if (saved && Object.keys(saved).length > 0) {
         // Initialize cards based on saved layout
-        const initializedCards = Object.entries(data.dashboard_layout)
+        const initializedCards = Object.entries(saved)
           .map(([key, value]: [string, any]) => {
             const cardInfo = CARD_TYPES.find((card) => card.id === key);
             if (!cardInfo) return null;
@@ -94,11 +90,11 @@ export function BentoGrid() {
     };
 
     loadLayout();
-  }, [user]);
+  }, [store]);
 
-  // Save layout to Supabase when it changes
+  // Save layout to the profile when it changes
   const saveLayout = async (updatedCards: any[]) => {
-    if (!user) return;
+    if (!store) return;
 
     const layoutToSave: any = {};
     updatedCards.forEach((card) => {
@@ -108,11 +104,8 @@ export function BentoGrid() {
       };
     });
 
-    const supabase = createClient();
-    await supabase
-      .from("profiles")
-      .update({ dashboard_layout: layoutToSave })
-      .eq("id", user.id);
+    const { error } = await store.updateProfile({ dashboard_layout: layoutToSave });
+    if (error) console.error("[BentoGrid] Failed to save layout:", error);
   };
 
   const handleAddCard = () => {
@@ -170,10 +163,23 @@ export function BentoGrid() {
     saveLayout(updatedCards);
   };
 
-  if (!user) {
+  if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-center">Please sign in to customize your dashboard</p>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-lime-400" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center space-y-4">
+        <p className="text-center text-muted-foreground">
+          Sign in or continue as a guest to customize your dashboard.
+        </p>
+        <Link href="/" className="text-sm font-medium text-accent">
+          Back to sign in
+        </Link>
       </div>
     );
   }
@@ -193,6 +199,17 @@ export function BentoGrid() {
 
   return (
     <div className="relative h-full w-full overflow-auto">
+      {/* TEMPORARY: guest mode — remove once core app is stable */}
+      {isGuest && (
+        <div className="guest-banner" role="status">
+          <span>
+            <strong>You&apos;re using Vireo as a guest</strong> — your data is
+            stored only in this browser and will be lost if you clear your
+            cache. Sign up to save it permanently.
+          </span>
+          <Link href="/?mode=signup">Sign up now</Link>
+        </div>
+      )}
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6 auto-rows-[200px]">
         {cards.map((card, index) => {

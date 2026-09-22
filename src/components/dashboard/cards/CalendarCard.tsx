@@ -3,10 +3,28 @@
 import { useState, useEffect } from "react";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
+
+/** Realtime only applies to Supabase-backed sessions; guests just re-render. */
+function createEventsChannel(userId: string, onChange: () => void) {
+  const supabase = createClient();
+  return supabase
+    .channel(`events:user_id=eq.${userId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "events",
+        filter: `user_id=eq.${userId}`,
+      },
+      onChange,
+    )
+    .subscribe();
+}
 
 export function CalendarCard() {
-  const { user } = useUser();
+  const { session, store } = useAppStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -17,70 +35,53 @@ export function CalendarCard() {
 
   // Load events on mount and subscribe to realtime changes
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
     loadEvents();
 
-    // Subscribe to realtime changes
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`events:user_id=eq.${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "events",
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          loadEvents();
-        }
-      )
-      .subscribe();
+    // Realtime subscriptions only apply to Supabase-backed sessions; guest
+    // data lives in localStorage and updates on the next render anyway.
+    const channel =
+      session?.kind === "user" ? createEventsChannel(session.userId, () => loadEvents()) : null;
 
     return () => {
-      channel.unsubscribe();
+      channel?.unsubscribe();
     };
-  }, [user]);
+  }, [store, session]);
 
   const loadEvents = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("start_time", { ascending: true });
-
-    if (error) {
-      console.error("[CalendarCard] Failed to load events:", error.message);
-      return;
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("events", {
+        order: [{ column: "start_time", ascending: true }],
+      });
+      setEvents(rows);
+    } catch (e) {
+      console.error("[CalendarCard] Failed to load events:", e);
     }
-    setEvents(data ?? []);
   };
 
   const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newEventTitle.trim() || !selectedDate) return;
+    const s = store;
+    if (!s || !newEventTitle.trim() || !selectedDate) return;
 
     setLoading(true);
-    const supabase = createClient();
 
     const [hours, minutes] = newEventTime.split(":").map(Number);
     const eventDate = new Date(selectedDate);
     eventDate.setHours(hours, minutes, 0);
 
-    const { error } = await supabase
-      .from("events")
-      .insert({
-        user_id: user.id,
-        title: newEventTitle,
-        start_time: eventDate.toISOString(),
-        end_time: new Date(eventDate.getTime() + 60 * 60 * 1000).toISOString(),
-        all_day: false
-      });
+    const { error } = await s.insert("events", {
+      title: newEventTitle,
+      start_time: eventDate.toISOString(),
+      end_time: new Date(eventDate.getTime() + 60 * 60 * 1000).toISOString(),
+      all_day: false
+    });
 
-    if (!error) {
+    if (error) {
+      console.error("[CalendarCard] Failed to add event:", error);
+    } else {
       setNewEventTitle("");
       setNewEventTime("09:00");
       setIsAddingEvent(false);
@@ -90,16 +91,13 @@ export function CalendarCard() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("events")
-      .delete()
-      .eq("id", eventId)
-      .eq("user_id", user.id);
-
-    if (!error) {
+    const { error } = await s.remove("events", eventId);
+    if (error) {
+      console.error("[CalendarCard] Failed to delete event:", error);
+    } else {
       await loadEvents();
     }
   };

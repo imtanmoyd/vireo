@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { BookOpen, Smile, Meh, Frown, Save, Edit } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 const MOODS = [
   { id: "great", icon: Smile, label: "Great", color: "bg-lime-400" },
@@ -14,7 +13,7 @@ const MOODS = [
 ];
 
 export function JournalCard() {
-  const { user } = useUser();
+  const { session, store } = useAppStore();
   const [todayEntry, setTodayEntry] = useState<any>(null);
   const [content, setContent] = useState("");
   const [selectedMood, setSelectedMood] = useState<string>("good");
@@ -23,9 +22,9 @@ export function JournalCard() {
 
   // Load today's journal entry on mount
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
     loadTodayEntry();
-  }, [user]);
+  }, [store]);
 
   const getTodayDate = () => {
     const now = new Date();
@@ -33,69 +32,63 @@ export function JournalCard() {
   };
 
   const loadTodayEntry = async () => {
-    if (!user) return;
-    const supabase = createClient();
+    const s = store;
+    if (!s) return;
     const today = getTodayDate();
 
-    const { data, error } = await supabase
-      .from("journal_entries")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("entry_date", today)
-      .single();
+    try {
+      const entries = await s.list("journal_entries", {
+        order: [{ column: "created_at", ascending: false }],
+      });
+      const entry = entries.find((e) => e.entry_date === today) ?? null;
 
-    if (error && error.code !== "PGRST116") {
-      // PGRST116 = no rows, which is normal for a new day.
-      console.error("[JournalCard] Failed to load entry:", error.message);
-    }
-
-    if (!error && data) {
-      setTodayEntry(data);
-      setContent(data.content || "");
-      setSelectedMood(data.mood || "good");
-    } else {
+      if (entry) {
+        setTodayEntry(entry);
+        setContent(entry.content || "");
+        setSelectedMood(entry.mood || "good");
+      } else {
+        setTodayEntry(null);
+        setContent("");
+        setSelectedMood("good");
+      }
+    } catch (e) {
+      console.error("[JournalCard] Failed to load entry:", e);
       setTodayEntry(null);
-      setContent("");
-      setSelectedMood("good");
     }
   };
 
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
     setLoading(true);
-    const supabase = createClient();
     const today = getTodayDate();
 
     if (todayEntry) {
       // Update existing entry
-      const { error } = await supabase
-        .from("journal_entries")
-        .update({
-          content,
-          mood: selectedMood,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", todayEntry.id)
-        .eq("user_id", user.id);
+      const { error } = await s.update("journal_entries", todayEntry.id, {
+        content,
+        mood: selectedMood,
+      });
 
-      if (!error) {
+      if (error) {
+        console.error("[JournalCard] Failed to update entry:", error);
+      } else {
         await loadTodayEntry();
         setIsEditing(false);
       }
     } else {
       // Create new entry
-      const { error } = await supabase
-        .from("journal_entries")
-        .insert({
-          user_id: user.id,
-          entry_date: today,
-          content,
-          mood: selectedMood
-        });
+      const { error } = await s.insert("journal_entries", {
+        entry_date: today,
+        content,
+        mood: selectedMood
+      });
 
-      if (!error) {
+      if (error) {
+        console.error("[JournalCard] Failed to create entry:", error);
+      } else {
         await loadTodayEntry();
         setIsEditing(false);
       }
@@ -127,10 +120,12 @@ export function JournalCard() {
     return mood ? mood.icon : Smile;
   };
 
-  if (!user) {
+  if (!session) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-muted-foreground">Sign in to use journal</p>
+        <p className="text-sm text-muted-foreground">
+          Sign in or continue as a guest to use journal
+        </p>
       </div>
     );
   }

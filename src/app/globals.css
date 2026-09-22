@@ -115,6 +115,40 @@ h1 { font-size: clamp(52px, 6.2vw, 94px); line-height: .94; letter-spacing: -.07
 .email-input:disabled { opacity: .6; }
 .email-input::placeholder { color: #a1a39d; }
 .email-button { background: var(--lime); color: #1b2415; }
+
+/* Auth (username + password) */
+.auth-grid { display: grid; grid-template-columns: minmax(270px, 1.15fr) minmax(230px, .85fr); gap: 14px; margin-top: 6px; }
+.auth-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 24px 48px rgba(22, 22, 22, 0.06); }
+.auth-card h2 { font-size: 22px; letter-spacing: -.04em; margin: 0; }
+.auth-sub { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; margin: -4px 0 2px; }
+.auth-field { display: flex; flex-direction: column; gap: 6px; }
+.auth-field label { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-foreground); }
+.auth-input { height: 44px; border-radius: 12px; border: 1px solid var(--line); background: #fafaf6; padding: 0 13px; font-size: 14px; color: var(--foreground); outline: none; transition: border-color .2s, box-shadow .2s; }
+.auth-input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(132, 204, 22, .18); }
+.auth-input::placeholder { color: #a1a39d; }
+.auth-submit { height: 44px; border: 0; border-radius: 12px; background: #161616; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: transform .2s, opacity .2s; margin-top: 2px; }
+.auth-submit:hover:not(:disabled) { transform: translateY(-1px); }
+.auth-submit:disabled { opacity: .55; cursor: not-allowed; }
+.auth-switch { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; }
+.auth-switch:hover { text-decoration: underline; }
+.strength { display: flex; flex-direction: column; gap: 5px; }
+.strength-track { display: flex; gap: 5px; }
+.strength-segment { height: 6px; flex: 1; border-radius: 99px; background: var(--line); transition: background-color .25s; }
+.strength-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted-foreground); }
+.guest-card { background: #20201f; color: #f5f5f0; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.guest-card h3 { font-size: 17px; letter-spacing: -.03em; margin: 0; }
+.guest-card p { color: #a7a8a1; font-size: 12px; line-height: 1.55; margin: 0; }
+.guest-card-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #c8f1691f; color: var(--lime); }
+.guest-note { color: #7c7d76 !important; font-size: 11px !important; }
+.guest-button { margin-top: auto; height: 44px; border: 1px solid #ffffff2e; border-radius: 12px; background: transparent; color: #f5f5f0; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: background .2s, transform .2s; }
+.guest-button:hover:not(:disabled) { background: #ffffff14; transform: translateY(-1px); }
+.guest-button:disabled { opacity: .6; cursor: wait; }
+/* TEMPORARY: guest mode — remove once core app is stable */
+.guest-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #c8f1691f; border: 1px solid #c8f16945; border-radius: 12px; padding: 10px 14px; font-size: 12px; margin: 0 6px 10px; }
+.guest-banner strong { font-weight: 800; }
+.guest-banner a, .guest-banner button { color: var(--accent); font-weight: 800; background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; }
+.guest-banner a:hover, .guest-banner button:hover { text-decoration: underline; }
+@media (max-width: 850px) { .auth-grid { grid-template-columns: 1fr; } }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

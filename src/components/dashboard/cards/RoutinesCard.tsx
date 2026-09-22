@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { GitBranch, Play, Pause, Check, Plus, Trash2, SkipForward } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 export function RoutinesCard() {
-  const { user } = useUser();
+  const { store } = useAppStore();
   const [routines, setRoutines] = useState<any[]>([]);
   const [activeRoutine, setActiveRoutine] = useState<any>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -18,9 +17,9 @@ export function RoutinesCard() {
   const [newRoutineSteps, setNewRoutineSteps] = useState("");
 
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
     loadRoutines();
-  }, [user]);
+  }, [store]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -47,27 +46,24 @@ export function RoutinesCard() {
   }, [activeRoutine, timer, timeLeft]);
 
   const loadRoutines = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("routines")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("routines", {
+        order: [{ column: "created_at", ascending: false }],
+      });
+      setRoutines(rows);
 
-    if (error) {
-      console.error("[RoutinesCard] Failed to load routines:", error.message);
-      return;
-    }
-    setRoutines(data ?? []);
-
-    // Check if today's day matches any routine's active days
-    const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
-    const todayRoutine = data.find((routine) =>
-      routine.days_active?.includes(today)
-    );
-    if (todayRoutine) {
-      setActiveRoutine(todayRoutine);
+      // Check if today's day matches any routine's active days
+      const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
+      const todayRoutine = rows.find((routine) =>
+        routine.days_active?.includes(today)
+      );
+      if (todayRoutine) {
+        setActiveRoutine(todayRoutine);
+      }
+    } catch (e) {
+      console.error("[RoutinesCard] Failed to load routines:", e);
     }
   };
 
@@ -131,10 +127,10 @@ export function RoutinesCard() {
 
   const handleCreateRoutine = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newRoutineName.trim() || !newRoutineSteps.trim()) return;
+    const s = store;
+    if (!s || !newRoutineName.trim() || !newRoutineSteps.trim()) return;
 
     setLoading(true);
-    const supabase = createClient();
 
     // Parse steps from text input
     const steps = newRoutineSteps.split("\n").map((line) => {
@@ -145,16 +141,15 @@ export function RoutinesCard() {
       };
     });
 
-    const { error } = await supabase
-      .from("routines")
-      .insert({
-        user_id: user.id,
-        name: newRoutineName,
-        steps: steps,
-        days_active: ["Mon", "Tue", "Wed", "Thu", "Fri"], // Default to weekdays
-      });
+    const { error } = await s.insert("routines", {
+      name: newRoutineName,
+      steps: steps,
+      days_active: ["Mon", "Tue", "Wed", "Thu", "Fri"], // Default to weekdays
+    });
 
-    if (!error) {
+    if (error) {
+      console.error("[RoutinesCard] Failed to create routine:", error);
+    } else {
       setNewRoutineName("");
       setNewRoutineSteps("");
       setShowNewRoutine(false);
@@ -164,16 +159,13 @@ export function RoutinesCard() {
   };
 
   const handleDeleteRoutine = async (routineId: string) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("routines")
-      .delete()
-      .eq("id", routineId)
-      .eq("user_id", user.id);
-
-    if (!error) {
+    const { error } = await s.remove("routines", routineId);
+    if (error) {
+      console.error("[RoutinesCard] Failed to delete routine:", error);
+    } else {
       await loadRoutines();
     }
   };

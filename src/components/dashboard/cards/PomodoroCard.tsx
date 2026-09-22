@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Timer, Play, Pause, SkipForward, Coffee } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 const POMODORO_PRESETS = {
   focus: { minutes: 25, type: "focus" },
@@ -12,7 +11,7 @@ const POMODORO_PRESETS = {
 };
 
 export function PomodoroCard() {
-  const { user } = useUser();
+  const { store } = useAppStore();
   const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
   const [isActive, setIsActive] = useState(false);
   const [currentMode, setCurrentMode] = useState<"focus" | "short_break" | "long_break">("focus");
@@ -44,40 +43,41 @@ export function PomodoroCard() {
   }, [isActive, timeLeft]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
     loadCompletedSessions();
-  }, [user]);
+  }, [store]);
 
   const loadCompletedSessions = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("pomodoro_sessions")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("completed", true)
-      .gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-    if (!error && data) {
-      setCompletedSessions(data.length);
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("pomodoro_sessions");
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      const count = rows.filter(
+        (session) =>
+          session.completed &&
+          new Date(session.started_at).getTime() >= cutoff,
+      ).length;
+      setCompletedSessions(count);
+    } catch (e) {
+      console.error("[PomodoroCard] Failed to load sessions:", e);
     }
   };
 
   const saveSession = async () => {
-    if (!user || isSessionSaved) return;
+    const s = store;
+    if (!s || isSessionSaved) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("pomodoro_sessions")
-      .insert({
-        user_id: user.id,
-        started_at: new Date(Date.now() - timeLeft * 1000).toISOString(),
-        duration_minutes: POMODORO_PRESETS[currentMode].minutes,
-        type: currentMode,
-        completed: true
-      });
+    const { error } = await s.insert("pomodoro_sessions", {
+      started_at: new Date(Date.now() - timeLeft * 1000).toISOString(),
+      duration_minutes: POMODORO_PRESETS[currentMode].minutes,
+      type: currentMode,
+      completed: true
+    });
 
-    if (!error) {
+    if (error) {
+      console.error("[PomodoroCard] Failed to save session:", error);
+    } else {
       setIsSessionSaved(true);
       await loadCompletedSessions();
     }

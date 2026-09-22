@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { GitCommit, Plus, Trash2, Flame, Leaf } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 const TREE_STAGES = [
   { stage: 0, label: "Seed", threshold: 0 },
@@ -28,7 +27,7 @@ const HABIT_ICONS = [
 ];
 
 export function HabitsCard() {
-  const { user } = useUser();
+  const { session, store, ownerId } = useAppStore();
   const [habits, setHabits] = useState<any[]>([]);
   const [habitLogs, setHabitLogs] = useState<any[]>([]);
   const [showNewHabit, setShowNewHabit] = useState(false);
@@ -37,64 +36,57 @@ export function HabitsCard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!store || !ownerId) return;
     loadHabits();
     loadHabitLogs();
-  }, [user]);
+  }, [store, ownerId]);
 
   const loadHabits = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("habits")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("[HabitsCard] Failed to load habits:", error.message);
-      return;
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("habits", {
+        order: [{ column: "created_at", ascending: false }],
+      });
+      setHabits(rows);
+    } catch (e) {
+      console.error("[HabitsCard] Failed to load habits:", e);
     }
-    setHabits(data ?? []);
   };
 
   const loadHabitLogs = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("habit_logs")
-      .select("*, habits!inner(name, icon)")
-      .eq("user_id", user.id)
-      .order("completed_at", { ascending: false });
-
-    if (error) {
-      console.error("[HabitsCard] Failed to load habit logs:", error.message);
-      return;
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("habit_logs", {
+        order: [{ column: "completed_at", ascending: false }],
+      });
+      setHabitLogs(rows);
+    } catch (e) {
+      console.error("[HabitsCard] Failed to load habit logs:", e);
     }
-    setHabitLogs(data ?? []);
   };
 
   const handleCreateHabit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newHabitName.trim()) return;
+    const s = store;
+    if (!s || !newHabitName.trim()) return;
 
     setLoading(true);
-    const supabase = createClient();
     const selectedIcon = HABIT_ICONS.find(h => h.id === newHabitIcon);
 
-    const { error } = await supabase
-      .from("habits")
-      .insert({
-        user_id: user.id,
-        name: newHabitName,
-        icon: selectedIcon?.icon || "🌱",
-        target_frequency: "daily",
-        tree_stage: 0,
-        current_streak: 0,
-        longest_streak: 0,
-      });
+    const { error } = await s.insert("habits", {
+      name: newHabitName,
+      icon: selectedIcon?.icon || "🌱",
+      target_frequency: "daily",
+      tree_stage: 0,
+      current_streak: 0,
+      longest_streak: 0,
+    });
 
-    if (!error) {
+    if (error) {
+      console.error("[HabitsCard] Failed to create habit:", error);
+    } else {
       setNewHabitName("");
       setNewHabitIcon("exercise");
       setShowNewHabit(false);
@@ -104,41 +96,31 @@ export function HabitsCard() {
   };
 
   const handleToggleHabitToday = async (habit: any) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
     const today = new Date().toISOString().split("T")[0];
 
-    // Check if already logged today
-    const { data: existingLog, error } = await supabase
-      .from("habit_logs")
-      .select("*")
-      .eq("habit_id", habit.id)
-      .eq("completed_at", today)
-      .single();
+    // Check if already logged today (from the loaded log list)
+    const existingLog = habitLogs.find(
+      (log) => log.habit_id === habit.id && log.completed_at === today,
+    );
 
     if (existingLog) {
       // Remove today's log
-      await supabase
-        .from("habit_logs")
-        .delete()
-        .eq("id", existingLog.id);
+      const { error: removeError } = await s.remove("habit_logs", existingLog.id);
+      if (removeError) console.error("[HabitsCard] Failed to remove log:", removeError);
 
       // Decrement streak
       const newStreak = Math.max(0, habit.current_streak - 1);
-      await supabase
-        .from("habits")
-        .update({ current_streak: newStreak })
-        .eq("id", habit.id);
+      await s.update("habits", habit.id, { current_streak: newStreak });
     } else {
       // Add today's log
-      await supabase
-        .from("habit_logs")
-        .insert({
-          habit_id: habit.id,
-          user_id: user.id,
-          completed_at: today,
-        });
+      const { error: insertError } = await s.insert("habit_logs", {
+        habit_id: habit.id,
+        completed_at: today,
+      });
+      if (insertError) console.error("[HabitsCard] Failed to add log:", insertError);
 
       // Increment streak
       const newStreak = habit.current_streak + 1;
@@ -153,14 +135,11 @@ export function HabitsCard() {
         }
       }
 
-      await supabase
-        .from("habits")
-        .update({
-          current_streak: newStreak,
-          longest_streak: newLongest,
-          tree_stage: newTreeStage,
-        })
-        .eq("id", habit.id);
+      await s.update("habits", habit.id, {
+        current_streak: newStreak,
+        longest_streak: newLongest,
+        tree_stage: newTreeStage,
+      });
     }
 
     await loadHabits();
@@ -168,16 +147,13 @@ export function HabitsCard() {
   };
 
   const handleDeleteHabit = async (habitId: string) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("habits")
-      .delete()
-      .eq("id", habitId)
-      .eq("user_id", user.id);
-
-    if (!error) {
+    const { error } = await s.remove("habits", habitId);
+    if (error) {
+      console.error("[HabitsCard] Failed to delete habit:", error);
+    } else {
       await loadHabits();
     }
   };
@@ -205,10 +181,12 @@ export function HabitsCard() {
     return null;
   };
 
-  if (!user) {
+  if (!session) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-sm text-muted-foreground">Sign in to track habits</p>
+        <p className="text-sm text-muted-foreground">
+          Sign in or continue as a guest to track habits
+        </p>
       </div>
     );
   }

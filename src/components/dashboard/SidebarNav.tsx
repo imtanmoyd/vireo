@@ -16,11 +16,13 @@ import {
   ArrowRight
 } from "lucide-react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useRouter } from "next/navigation";
+import { signOutSession } from "@/lib/auth";
+import { useAppStore } from "@/lib/data";
 
 export function SidebarNav() {
-  const { user, loading } = useUser();
+  const { session, store, loading, isGuest, username } = useAppStore();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(true);
   const [theme, setTheme] = useState<string | null>(null);
 
@@ -45,18 +47,17 @@ export function SidebarNav() {
     localStorage.setItem("vireo-theme", newTheme);
     document.documentElement.classList.toggle("dark", newTheme === "dark");
 
-    // Persist to Supabase
-    if (user) {
-      const supabase = createClient();
-      supabase
-        .from("profiles")
-        .update({ theme_prefs: { theme: newTheme } })
-        .eq("id", user.id)
-        .then();
-    }
+    // Persist to the profile (Supabase for accounts, localStorage for guests)
+    store?.updateProfile({ theme_prefs: { theme: newTheme } }).then();
   };
 
-  if (loading) return <div>Loading...</div>;
+  const handleLogout = async () => {
+    await signOutSession();
+    router.push("/");
+    router.refresh();
+  };
+
+  const displayName = isGuest ? "Guest" : username ?? "Account";
 
   return (
     <aside className={`sticky top-0 h-screen shrink-0 bg-white/5 dark:bg-black/5 backdrop-blur-md
@@ -70,6 +71,15 @@ export function SidebarNav() {
           </span>
           <span className={`${isOpen ? "block" : "hidden"} font-bold text-xl`}>
             Vireo
+          </span>
+        </div>
+
+        {/* Signed-in identity / guest badge */}
+        <div className={`flex items-center space-x-2 ${isOpen ? "px-1 pt-2" : "hidden"}`}>
+          <span className={`h-2 w-2 rounded-full ${isGuest ? "bg-amber-400" : "bg-lime-400"}`} />
+          <span className="text-xs text-muted-foreground">
+            {loading ? "Loading…" : displayName}
+            {isGuest ? " · guest session" : ""}
           </span>
         </div>
 
@@ -161,19 +171,17 @@ export function SidebarNav() {
           </button>
         </div>
 
-        {/* Logout */}
+        {/* Logout / Exit guest mode */}
         <div className="flex items-center space-x-3 p-3 rounded-md transition-colors hover:bg-lime-400/10 dark:hover:bg-lime-400/5">
-          <Link
-            href="/"
-            onClick={() => {
-              // Handle logout (would need auth signOut)
-              // For now just redirect
-            }}
+          <button
+            onClick={handleLogout}
             className="flex items-center space-x-2 p-2 rounded-md hover:bg-lime-400/10 dark:hover:bg-lime-400/5"
           >
             <LogOut size={24} />
-            <span className={isOpen ? "block" : "hidden"}>Logout</span>
-          </Link>
+            <span className={isOpen ? "block" : "hidden"}>
+              {isGuest ? "Exit guest mode" : "Logout"}
+            </span>
+          </button>
         </div>
       </div>
 

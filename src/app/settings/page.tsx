@@ -8,15 +8,13 @@ import {
   Image as ImageIcon,
   Trash2,
   Settings as SettingsIcon,
-  RotateCw,
   LogOut,
-  AtSign
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { signOutSession } from "@/lib/auth";
+import { useAppStore } from "@/lib/data";
 
 export default function SettingsPage() {
-  const { user, loading } = useUser();
+  const { session, store, loading, isGuest, username } = useAppStore();
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [timezone, setTimezone] = useState("");
@@ -28,53 +26,55 @@ export default function SettingsPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!store) return;
     loadProfile();
-  }, [user]);
+  }, [store]);
 
   const loadProfile = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("display_name, avatar_url, timezone, theme_prefs")
-      .eq("id", user.id)
-      .single();
+    const s = store;
+    if (!s) return;
+    try {
+      const profile = await s.getProfile<{
+        display_name?: string | null;
+        avatar_url?: string | null;
+        timezone?: string | null;
+        theme_prefs?: { theme?: string } | null;
+      } | null>();
 
-    if (!error && data) {
-      setDisplayName(data.display_name || "");
-      setAvatarUrl(data.avatar_url || "");
-      setTimezone(data.timezone || "UTC");
+      if (profile) {
+        setDisplayName(profile.display_name || "");
+        setAvatarUrl(profile.avatar_url || "");
+        setTimezone(profile.timezone || "UTC");
 
-      // Extract theme preference from theme_prefs JSON
-      const themeFromPrefs = data.theme_prefs?.theme || "system";
-      setThemePreference(themeFromPrefs);
+        // Extract theme preference from theme_prefs JSON
+        const themeFromPrefs = profile.theme_prefs?.theme || "system";
+        setThemePreference(themeFromPrefs);
+      }
+    } catch (e) {
+      console.error("[Settings] Failed to load profile:", e);
     }
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
     setIsUpdating(true);
-    const supabase = createClient();
 
     // Prepare theme preferences
     const themePrefs = { theme: themePreference };
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        display_name: displayName || null,
-        avatar_url: avatarUrl || null,
-        timezone: timezone || "UTC",
-        theme_prefs: themePrefs
-      })
-      .eq("id", user.id);
+    const { error } = await s.updateProfile({
+      display_name: displayName || null,
+      avatar_url: avatarUrl || null,
+      timezone: timezone || "UTC",
+      theme_prefs: themePrefs
+    });
 
-    if (!error) {
-      // Show success feedback
-      // In a real app, you might use a toast notification
+    if (error) {
+      alert("Failed to save settings: " + error);
+    } else {
       alert("Settings saved successfully!");
     }
     setIsUpdating(false);
@@ -104,26 +104,23 @@ export default function SettingsPage() {
   };
 
   const handleUploadAvatar = async () => {
-    if (!user || !avatarPreview) return;
+    const s = store;
+    if (!s || !avatarPreview) return;
 
     setUploadingAvatar(true);
-    const supabase = createClient();
 
     try {
       // In a real app, you would upload to Supabase Storage
       // For now, we'll simulate by storing the base64 (not recommended for production)
       // This is just for demonstration
-      const { error } = await supabase
-        .from("profiles")
-        .update({ avatar_url: avatarPreview })
-        .eq("id", user.id);
+      const { error } = await s.updateProfile({ avatar_url: avatarPreview });
 
       if (!error) {
         setAvatarUrl(avatarPreview);
         setAvatarPreview(null);
         alert("Avatar uploaded successfully!");
       } else {
-        throw error;
+        throw new Error(error);
       }
     } catch (error: any) {
       alert("Failed to upload avatar: " + error.message);
@@ -133,14 +130,11 @@ export default function SettingsPage() {
   };
 
   const handleRemoveAvatar = async () => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
     setIsUpdating(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("profiles")
-      .update({ avatar_url: null })
-      .eq("id", user.id);
+    const { error } = await s.updateProfile({ avatar_url: null });
 
     if (!error) {
       setAvatarUrl("");
@@ -151,33 +145,25 @@ export default function SettingsPage() {
   };
 
   const handleResetLayout = async () => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
     setIsUpdating(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("profiles")
-      .update({ dashboard_layout: {} })
-      .eq("id", user.id);
+    const { error } = await s.updateProfile({ dashboard_layout: {} });
 
     if (!error) {
       // Reload the page to apply reset layout
       window.location.reload();
     } else {
-      alert("Failed to reset layout: " + (error as any)?.message);
+      alert("Failed to reset layout: " + error);
     }
     setIsUpdating(false);
     setShowResetLayout(false);
   };
 
   const handleDisconnectAccount = async () => {
-    if (!user) return;
-
-    // In a real app, you would sign out and potentially disconnect OAuth providers
-    // For now, we'll just sign out
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // Redirect to home page
+    // Ends the session (account sign-out or exiting guest mode)
+    await signOutSession();
     window.location.href = "/";
   };
 
@@ -209,15 +195,18 @@ export default function SettingsPage() {
     );
   }
 
-  if (!user) {
+  if (!session) {
     return (
       <div className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-6">
         <div className="text-center space-y-4">
           <SettingsIcon size={48} className="text-muted-foreground" />
           <h1 className="text-2xl font-bold">Settings</h1>
           <p className="text-sm text-muted-foreground">
-            Please sign in to access your settings
+            Sign in or continue as a guest to access your settings
           </p>
+          <Link href="/" className="text-sm font-medium text-accent">
+            Back to sign in
+          </Link>
         </div>
       </div>
     );
@@ -240,7 +229,7 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold">Settings</h1>
 
         <div className="flex items-center space-x-2">
-          <Link href="/" className="text-sm text-lime-400">
+          <Link href="/" className="text-sm font-medium text-accent">
             Home
           </Link>
         </div>
@@ -409,54 +398,41 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Account</h2>
 
           <div className="space-y-4">
-            <h3 className="text-md font-medium mb-2">Connected Accounts</h3>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded bg-white/5 dark:bg-black/5">
-                <div className="flex items-center space-x-3">
-                  <div className="h-8 w-8 flex items-center justify-center bg-white/10 dark:bg-black/10 rounded-lg">
-                    <User size={16} className="text-white" />
+            <div className="flex items-center justify-between p-3 rounded bg-white/5 dark:bg-black/5">
+              <div className="flex items-center space-x-3">
+                <div className="h-8 w-8 flex items-center justify-center bg-lime-400/20 dark:bg-lime-400/10 rounded-lg">
+                  <User size={16} className="text-accent" />
+                </div>
+                <div>
+                  <div className="font-medium">
+                    {isGuest ? "Guest session" : "Vireo account"}
                   </div>
-                  <div>
-                    <div className="font-medium">Google Account</div>
-                    <div className="text-xs text-muted-foreground">
-                      Connected • {user?.email || "No email"}
-                    </div>
+                  <div className="text-xs text-muted-foreground">
+                    {isGuest
+                      ? "Your data is stored only in this browser and will be lost if you clear your cache."
+                      : `Signed in as ${username ?? "your account"} (username + password)`}
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowDisconnectAccount(true)}
-                  className="text-xs text-red-400 hover:text-red-400/90"
-                >
-                  Disconnect
-                </button>
               </div>
+              <button
+                onClick={() => setShowDisconnectAccount(true)}
+                className="text-xs text-red-400 hover:text-red-400/90"
+              >
+                {isGuest ? "Exit guest mode" : "Sign out"}
+              </button>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded bg-white/5 dark:bg-black/5">
-                <div className="flex items-center space-x-3">
-                  <div className="h-8 w-8 flex items-center justify-center bg-white/10 dark:bg-black/10 rounded-lg">
-                    <AtSign size={16} className="text-white" />
-                  </div>
-                  <div>
-                    <div className="font-medium">X (Twitter) Account</div>
-                    <div className="text-xs text-muted-foreground">
-                      Not connected
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    // In a real app, you would initiate X OAuth connection
-                    alert("X (Twitter) connection coming soon!");
-                  }}
-                  className="text-xs text-lime-400 hover:text-lime-400/90"
-                >
-                  Connect
-                </button>
+            {isGuest && (
+              // TEMPORARY: guest mode — remove once core app is stable
+              <div className="p-3 rounded bg-white/5 dark:bg-black/5 text-xs text-muted-foreground">
+                Want to keep your data permanently?{" "}
+                <Link href="/?mode=signup" className="text-accent font-semibold">
+                  Sign up now
+                </Link>{" "}
+                — everything you&apos;ve created in this session stays in this
+                browser for now.
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

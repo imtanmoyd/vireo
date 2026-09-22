@@ -2,63 +2,56 @@
 
 import { useState, useEffect } from "react";
 import { CheckSquare, Plus, Trash2, Calendar } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 export function TodoCard() {
-  const { user } = useUser();
+  const { store, ownerId } = useAppStore();
   const [todos, setTodos] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [newTodoTitle, setNewTodoTitle] = useState("");
   const [newTodoDueDate, setNewTodoDueDate] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Load todos from Supabase
+  // Load todos from the data store (Supabase for accounts, local for guests)
   useEffect(() => {
-    if (!user) return;
+    if (!store || !ownerId) return;
     loadTodos();
-  }, [user]);
+  }, [store, ownerId]);
 
   const loadTodos = async () => {
-    if (!user) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("todos")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("position", { ascending: true })
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      // Surface query failures (missing table, RLS rejection, etc.) — they
-      // would otherwise render as a mysteriously empty card.
-      console.error("[TodoCard] Failed to load todos:", error.message);
-      return;
+    const s = store;
+    if (!s) return;
+    try {
+      const rows = await s.list("todos", {
+        order: [
+          { column: "position", ascending: true },
+          { column: "created_at", ascending: false },
+        ],
+      });
+      setTodos(rows);
+    } catch (e) {
+      console.error("[TodoCard] Failed to load todos:", e);
     }
-    setTodos(data ?? []);
   };
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newTodoTitle.trim()) return;
+    const s = store;
+    if (!s || !newTodoTitle.trim()) return;
 
     setLoading(true);
-    const supabase = createClient();
     const maxPosition = todos.length > 0 ? Math.max(...todos.map(t => t.position || 0)) : 0;
 
-    const { error } = await supabase
-      .from("todos")
-      .insert({
-        user_id: user.id,
-        title: newTodoTitle,
-        due_date: newTodoDueDate || null,
-        position: maxPosition + 1,
-        is_complete: false,
-        priority: 0
-      });
+    const { error } = await s.insert("todos", {
+      title: newTodoTitle,
+      due_date: newTodoDueDate || null,
+      position: maxPosition + 1,
+      is_complete: false,
+      priority: 0
+    });
 
     if (error) {
-      console.error("[TodoCard] Failed to add todo:", error.message);
+      console.error("[TodoCard] Failed to add todo:", error);
     } else {
       setNewTodoTitle("");
       setNewTodoDueDate("");
@@ -69,36 +62,33 @@ export function TodoCard() {
   };
 
   const handleToggleTodo = async (todoId: string, isComplete: boolean) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("todos")
-      .update({ is_complete: !isComplete })
-      .eq("id", todoId)
-      .eq("user_id", user.id);
-
-    if (!error) {
+    const { error } = await s.update("todos", todoId, { is_complete: !isComplete });
+    if (error) {
+      console.error("[TodoCard] Failed to update todo:", error);
+    } else {
       await loadTodos();
     }
   };
 
   const handleDeleteTodo = async (todoId: string) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("todos")
-      .delete()
-      .eq("id", todoId)
-      .eq("user_id", user.id);
-
-    if (!error) {
+    const { error } = await s.remove("todos", todoId);
+    if (error) {
+      console.error("[TodoCard] Failed to delete todo:", error);
+    } else {
       await loadTodos();
     }
   };
 
   const handleReorderTodos = async (todoId: string, direction: "up" | "down") => {
+    const s = store;
+    if (!s) return;
+
     const index = todos.findIndex(t => t.id === todoId);
     if (index === -1) return;
     if (direction === "up" && index === 0) return;
@@ -108,13 +98,9 @@ export function TodoCard() {
     const newTodos = [...todos];
     [newTodos[index], newTodos[newIndex]] = [newTodos[newIndex], newTodos[index]];
 
-    // Update positions in Supabase
-    const supabase = createClient();
+    // Update positions in the store
     for (let i = 0; i < newTodos.length; i++) {
-      await supabase
-        .from("todos")
-        .update({ position: i })
-        .eq("id", newTodos[i].id);
+      await s.update("todos", newTodos[i].id, { position: i });
     }
 
     setTodos(newTodos);

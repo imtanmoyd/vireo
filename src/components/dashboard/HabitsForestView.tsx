@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ArrowLeft, Leaf, RefreshCw, Flame } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useUser } from "@/lib/supabase/user";
+import { useAppStore } from "@/lib/data";
 
 const TREE_STAGES = [
   { stage: 0, label: "Seed", threshold: 0, color: "bg-green-500/20" },
@@ -15,7 +14,7 @@ const TREE_STAGES = [
 ];
 
 export function HabitsForestView() {
-  const { user } = useUser();
+  const { session, store, ownerId } = useAppStore();
   const [habits, setHabits] = useState<any[]>([]);
   const [habitLogs, setHabitLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,32 +23,32 @@ export function HabitsForestView() {
   );
 
   useEffect(() => {
-    if (!user) return;
+    if (!store || !ownerId) return;
     loadData();
-  }, [user, selectedDate]);
+  }, [store, ownerId, selectedDate]);
 
   const loadData = async () => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
     setLoading(true);
-    const supabase = createClient();
 
-    // Load habits
-    const { data: habitsData } = await supabase
-      .from("habits")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    try {
+      // Load habits
+      const habitsData = await s.list("habits", {
+        order: [{ column: "created_at", ascending: false }],
+      });
 
-    // Load habit logs for selected date
-    const { data: logsData } = await supabase
-      .from("habit_logs")
-      .select("*, habits!inner(name, icon)")
-      .eq("user_id", user.id)
-      .eq("completed_at", selectedDate)
-      .order("created_at", { ascending: false });
+      // Load habit logs for the selected date
+      const allLogs = await s.list("habit_logs", {
+        order: [{ column: "created_at", ascending: false }],
+      });
+      const logsData = allLogs.filter((log) => log.completed_at === selectedDate);
 
-    if (habitsData) setHabits(habitsData);
-    if (logsData) setHabitLogs(logsData);
+      setHabits(habitsData);
+      setHabitLogs(logsData);
+    } catch (e) {
+      console.error("[HabitsForestView] Failed to load data:", e);
+    }
     setLoading(false);
   };
 
@@ -58,33 +57,25 @@ export function HabitsForestView() {
   };
 
   const handleToggleHabit = async (habitId: string) => {
-    if (!user) return;
+    const s = store;
+    if (!s) return;
 
-    const supabase = createClient();
-
-    // Check if already logged for selected date
-    const { data: existingLog } = await supabase
-      .from("habit_logs")
-      .select("*")
-      .eq("habit_id", habitId)
-      .eq("completed_at", selectedDate)
-      .single();
+    // Check if already logged for the selected date (from loaded logs)
+    const existingLog = habitLogs.find(
+      (log) => log.habit_id === habitId && log.completed_at === selectedDate,
+    );
 
     if (existingLog) {
       // Remove log
-      await supabase
-        .from("habit_logs")
-        .delete()
-        .eq("id", existingLog.id);
+      const { error } = await s.remove("habit_logs", existingLog.id);
+      if (error) console.error("[HabitsForestView] Failed to remove log:", error);
     } else {
       // Add log
-      await supabase
-        .from("habit_logs")
-        .insert({
-          habit_id: habitId,
-          user_id: user.id,
-          completed_at: selectedDate,
-        });
+      const { error } = await s.insert("habit_logs", {
+        habit_id: habitId,
+        completed_at: selectedDate,
+      });
+      if (error) console.error("[HabitsForestView] Failed to add log:", error);
     }
 
     // Recalculate streaks and tree stages for all habits
@@ -93,18 +84,19 @@ export function HabitsForestView() {
   };
 
   const recalculateHabitStats = async () => {
-    if (!user) return;
-    const supabase = createClient();
+    const s = store;
+    if (!s) return;
 
-    // Get all logs for user to calculate streaks
-    const { data: allLogs } = await supabase
-      .from("habit_logs")
-      .select("habit_id, completed_at")
-      .eq("user_id", user.id)
-      .order("completed_at", { ascending: true });
-
-    if (!allLogs) return;
-
+    // Get all logs to calculate streaks
+    let allLogs: Array<{ habit_id: string; completed_at: string }>;
+    try {
+      allLogs = await s.list("habit_logs", {
+        order: [{ column: "completed_at", ascending: true }],
+      });
+    } catch (e) {
+      console.error("[HabitsForestView] Failed to load logs for recalculation:", e);
+      return;
+    }
     // Group logs by habit
     const logsByHabit: Record<string, string[]> = {};
     allLogs.forEach((log) => {
@@ -193,10 +185,12 @@ export function HabitsForestView() {
 
     // Batch update habits
     for (const update of updates) {
-      await supabase
-        .from("habits")
-        .update(update)
-        .eq("id", update.id);
+      const { error } = await s.update("habits", update.id, {
+        current_streak: update.current_streak,
+        longest_streak: update.longest_streak,
+        tree_stage: update.tree_stage,
+      });
+      if (error) console.error("[HabitsForestView] Failed to update habit:", error);
     }
   };
 
@@ -215,10 +209,12 @@ export function HabitsForestView() {
     );
   };
 
-  if (!user) {
+  if (!session) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-center">Please sign in to view your habit forest</p>
+        <p className="text-center text-muted-foreground">
+          Sign in or continue as a guest to view your habit forest
+        </p>
       </div>
     );
   }

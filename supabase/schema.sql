@@ -2,6 +2,7 @@ create extension if not exists "uuid-ossp";
 
 create table if not exists profiles (
   id uuid references auth.users on delete cascade primary key,
+  username text,
   display_name text,
   avatar_url text,
   timezone text default 'UTC',
@@ -9,6 +10,10 @@ create table if not exists profiles (
   theme_prefs jsonb default '{}',
   created_at timestamptz default now()
 );
+
+-- User-facing identity: unique username chosen at sign-up.
+alter table profiles add column if not exists username text;
+create unique index if not exists profiles_username_key on profiles (username);
 create table if not exists events (
   id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
   title text not null, description text, start_time timestamptz not null, end_time timestamptz,
@@ -49,10 +54,11 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, display_name, avatar_url)
+  insert into public.profiles (id, username, display_name, avatar_url)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
+    lower(new.raw_user_meta_data ->> 'username'),
+    coalesce(new.raw_user_meta_data ->> 'username', new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
     new.raw_user_meta_data ->> 'avatar_url'
   )
   on conflict (id) do nothing;
