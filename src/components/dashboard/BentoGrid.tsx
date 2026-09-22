@@ -39,8 +39,134 @@ const DEFAULT_LAYOUT = {
   routines: { order: 5, size: "medium" },
 };
 
+interface DashboardStats {
+  due: number;
+  habitsDone: number;
+  habitsTotal: number;
+  focusMinutes: number;
+  blocksToday: number;
+}
+
+/** Greeting + at-a-glance counters pulled from the active data store. */
+function DashboardHeader({
+  store,
+  username,
+  isGuest,
+}: {
+  store: ReturnType<typeof useAppStore>["store"];
+  username: string | null;
+  isGuest: boolean;
+}) {
+  const [greeting, setGreeting] = useState("Welcome back");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+
+  useEffect(() => {
+    const h = new Date().getHours();
+    setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening");
+  }, []);
+
+  useEffect(() => {
+    const s = store;
+    if (!s) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const today = new Date();
+        const todayIso = today.toISOString().split("T")[0];
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+        const startOfToday = new Date(today);
+        startOfToday.setHours(0, 0, 0, 0);
+        const dow = (today.getDay() + 6) % 7;
+
+        const [todos, habits, habitLogs, sessions, blocks] = await Promise.all([
+          s.list<{ due_date: string | null; is_complete: boolean }>("todos"),
+          s.list<{ id: string }>("habits"),
+          s.list<{ habit_id: string; completed_at: string }>("habit_logs"),
+          s.list<{
+            started_at: string;
+            duration_minutes: number;
+            type: string | null;
+            completed: boolean;
+          }>("pomodoro_sessions"),
+          s.list<{ day_of_week: number }>("routine_blocks"),
+        ]);
+        if (cancelled) return;
+
+        const due = todos.filter(
+          (t) => !t.is_complete && t.due_date && new Date(t.due_date).getTime() <= todayEnd.getTime(),
+        ).length;
+        const doneSet = new Set(
+          habitLogs.filter((l) => l.completed_at === todayIso).map((l) => l.habit_id),
+        );
+        const focusMinutes = sessions
+          .filter(
+            (x) =>
+              x.completed &&
+              x.type === "focus" &&
+              new Date(x.started_at).getTime() >= startOfToday.getTime(),
+          )
+          .reduce((sum, x) => sum + (x.duration_minutes ?? 0), 0);
+        const blocksToday = blocks.filter((b) => b.day_of_week === dow).length;
+
+        setStats({ due, habitsDone: doneSet.size, habitsTotal: habits.length, focusMinutes, blocksToday });
+      } catch (e) {
+        console.error("[BentoGrid] Failed to load stats:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
+
+  const displayName = isGuest ? "guest" : username ?? "there";
+
+  return (
+    <div className="space-y-3 px-6 pt-6">
+      <div>
+        <h1 className="text-xl font-bold">
+          {greeting}, <span className="text-accent">{displayName}</span>
+        </h1>
+        <p className="text-xs text-muted-foreground">
+          {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatPill icon={CheckSquare} label="Due today" value={stats ? stats.due : "-"} />
+        <StatPill
+          icon={GitCommit}
+          label="Habits today"
+          value={stats ? `${stats.habitsDone}/${stats.habitsTotal}` : "-"}
+        />
+        <StatPill icon={Timer} label="Focus today" value={stats ? `${stats.focusMinutes}m` : "-"} />
+        <StatPill icon={GitBranch} label="Blocks today" value={stats ? stats.blocksToday : "-"} />
+      </div>
+    </div>
+  );
+}
+
+function StatPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Calendar;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-md dark:border-black/10 dark:bg-black/5">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon size={13} className="text-accent" />
+        {label}
+      </div>
+      <p className="mt-1 text-xl font-bold">{value}</p>
+    </div>
+  );
+}
+
 export function BentoGrid() {
-  const { session, store, loading, isGuest } = useAppStore();
+  const { session, store, loading, isGuest, username } = useAppStore();
   const [cards, setCards] = useState<Array<any>>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
@@ -210,8 +336,11 @@ export function BentoGrid() {
           <Link href="/?mode=signup">Sign up now</Link>
         </div>
       )}
+      {/* Greeting + KPI stats */}
+      <DashboardHeader store={store} username={username} isGuest={isGuest} />
+
       {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6 auto-rows-[200px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6 pt-4 auto-rows-[200px]">
         {cards.map((card, index) => {
           const IconComponent = card.icon;
           return (

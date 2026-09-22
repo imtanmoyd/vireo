@@ -1,429 +1,323 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
-import { GitBranch, Play, Pause, Check, Plus, Trash2, SkipForward } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { GitBranch, Plus, Trash2, Clock, X } from "lucide-react";
 import { useAppStore } from "@/lib/data";
+
+interface RoutineBlock {
+  id: string;
+  title: string;
+  day_of_week: number;
+  start_time: string;
+  duration_minutes: number;
+  color: string | null;
+  position: number | null;
+}
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const BLOCK_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
+
+/** 0 = Monday .. 6 = Sunday (matches the day_of_week column). */
+function todayIndex(): number {
+  return (new Date().getDay() + 6) % 7;
+}
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function formatTime(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  const hour24 = h || 0;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  return `${hour24 % 12 || 12}:${String(m || 0).padStart(2, "0")} ${suffix}`;
+}
+
+function endTime(block: RoutineBlock): string {
+  const end = toMinutes(block.start_time) + (block.duration_minutes || 0);
+  const h = Math.floor(end / 60) % 24;
+  const m = end % 60;
+  const suffix = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
 
 export function RoutinesCard() {
   const { store } = useAppStore();
-  const [routines, setRoutines] = useState<any[]>([]);
-  const [activeRoutine, setActiveRoutine] = useState<any>(null);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [timer, setTimer] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [showNewRoutine, setShowNewRoutine] = useState(false);
-  const [newRoutineName, setNewRoutineName] = useState("");
-  const [newRoutineSteps, setNewRoutineSteps] = useState("");
+  const [blocks, setBlocks] = useState<RoutineBlock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDay, setActiveDay] = useState(todayIndex());
+  const [showModal, setShowModal] = useState(false);
 
-  useEffect(() => {
-    if (!store) return;
-    loadRoutines();
-  }, [store]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-
-    if (activeRoutine && timer !== null && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            // Time's up for current step
-            handleStepComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (activeRoutine && timeLeft === 0 && timer !== null) {
-      // Time completed naturally, move to next step
-      handleStepComplete();
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [activeRoutine, timer, timeLeft]);
-
-  const loadRoutines = async () => {
+  const loadBlocks = useCallback(async () => {
     const s = store;
     if (!s) return;
     try {
-      const rows = await s.list("routines", {
-        order: [{ column: "created_at", ascending: false }],
+      const rows = await s.list<RoutineBlock>("routine_blocks", {
+        order: [
+          { column: "day_of_week", ascending: true },
+          { column: "start_time", ascending: true },
+        ],
       });
-      setRoutines(rows);
-
-      // Check if today's day matches any routine's active days
-      const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
-      const todayRoutine = rows.find((routine) =>
-        routine.days_active?.includes(today)
-      );
-      if (todayRoutine) {
-        setActiveRoutine(todayRoutine);
-      }
+      setBlocks(rows);
     } catch (e) {
-      console.error("[RoutinesCard] Failed to load routines:", e);
+      console.error("[RoutinesCard] Failed to load blocks:", e);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [store]);
 
-  const handleStartRoutine = (routine: any) => {
-    setActiveRoutine(routine);
-    setCurrentStepIndex(0);
-    setTimer(Date.now());
-    if (routine.steps && routine.steps.length > 0) {
-      setTimeLeft(routine.steps[0].duration_minutes * 60);
-    }
-  };
+  useEffect(() => {
+    loadBlocks();
+  }, [loadBlocks]);
 
-  const handlePauseResume = () => {
-    if (timer === null) {
-      // Resume
-      setTimer(Date.now());
-    } else {
-      // Pause
-      setTimer(null);
-    }
-  };
-
-  const handleSkipStep = () => {
-    if (activeRoutine && activeRoutine.steps) {
-      if (currentStepIndex < activeRoutine.steps.length - 1) {
-        setCurrentStepIndex(currentStepIndex + 1);
-        setTimeLeft(activeRoutine.steps[currentStepIndex + 1].duration_minutes * 60);
-        setTimer(Date.now());
-      } else {
-        // Routine complete
-        setActiveRoutine(null);
-        setCurrentStepIndex(0);
-        setTimer(null);
-        setTimeLeft(0);
-      }
-    }
-  };
-
-  const handleStepComplete = () => {
-    if (activeRoutine && activeRoutine.steps) {
-      if (currentStepIndex < activeRoutine.steps.length - 1) {
-        setCurrentStepIndex(currentStepIndex + 1);
-        setTimeLeft(activeRoutine.steps[currentStepIndex + 1].duration_minutes * 60);
-        setTimer(Date.now());
-      } else {
-        // Routine complete
-        setActiveRoutine(null);
-        setCurrentStepIndex(0);
-        setTimer(null);
-        setTimeLeft(0);
-      }
-    }
-  };
-
-  const handleStopRoutine = () => {
-    setActiveRoutine(null);
-    setCurrentStepIndex(0);
-    setTimer(null);
-    setTimeLeft(0);
-  };
-
-  const handleCreateRoutine = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const s = store;
-    if (!s || !newRoutineName.trim() || !newRoutineSteps.trim()) return;
-
-    setLoading(true);
-
-    // Parse steps from text input
-    const steps = newRoutineSteps.split("\n").map((line) => {
-      const [title, duration] = line.split(":").map((s) => s.trim());
-      return {
-        title: title || "Step",
-        duration_minutes: parseInt(duration) || 5,
-      };
-    });
-
-    const { error } = await s.insert("routines", {
-      name: newRoutineName,
-      steps: steps,
-      days_active: ["Mon", "Tue", "Wed", "Thu", "Fri"], // Default to weekdays
-    });
-
-    if (error) {
-      console.error("[RoutinesCard] Failed to create routine:", error);
-    } else {
-      setNewRoutineName("");
-      setNewRoutineSteps("");
-      setShowNewRoutine(false);
-      await loadRoutines();
-    }
-    setLoading(false);
-  };
-
-  const handleDeleteRoutine = async (routineId: string) => {
+  const handleDelete = async (id: string) => {
     const s = store;
     if (!s) return;
-
-    const { error } = await s.remove("routines", routineId);
-    if (error) {
-      console.error("[RoutinesCard] Failed to delete routine:", error);
-    } else {
-      await loadRoutines();
-    }
+    const { error } = await s.remove("routine_blocks", id);
+    if (error) console.error("[RoutinesCard] Failed to delete block:", error);
+    else await loadBlocks();
   };
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-  };
-
-  const getProgressPercentage = () => {
-    if (!activeRoutine || !activeRoutine.steps) return 0;
-    const totalTime = activeRoutine.steps.reduce(
-      (sum: number, step: any) => sum + step.duration_minutes * 60,
-      0
-    );
-    const currentStepTotalTime = activeRoutine.steps[currentStepIndex]?.duration_minutes * 60 || 0;
-    const timeCompleted = currentStepTotalTime - timeLeft;
-
-    // Calculate total time completed including previous steps
-    let totalCompleted = timeCompleted;
-    for (let i = 0; i < currentStepIndex; i++) {
-      totalCompleted += activeRoutine.steps[i].duration_minutes * 60;
-    }
-
-    return (totalCompleted / totalTime) * 100;
-  };
-
-  const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
+  const today = todayIndex();
+  const todayCount = blocks.filter((b) => b.day_of_week === today).length;
+  const dayBlocks = blocks
+    .filter((b) => b.day_of_week === activeDay)
+    .sort((a, b) => toMinutes(a.start_time) - toMinutes(b.start_time));
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <div className="h-8 w-8 flex items-center justify-center bg-indigo-400/20 dark:bg-indigo-400/10 rounded-lg">
-            <GitBranch size={18} className="text-indigo-400" />
-          </div>
-          <span className="font-semibold text-lg">Today's Routine</span>
-        </div>
+      {/* Sub-header */}
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {todayCount === 0
+            ? "Nothing scheduled today"
+            : `${todayCount} block${todayCount === 1 ? "" : "s"} today`}
+        </p>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-1 rounded-md p-1.5 text-xs font-medium text-accent hover:bg-lime-400/10"
+        >
+          <Plus size={14} />
+          Add block
+        </button>
       </div>
 
-      {/* Active Routine */}
-      {activeRoutine ? (
-        <div className="flex-1 flex flex-col">
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-lg">{activeRoutine.name}</h3>
-              <button
-                onClick={handleStopRoutine}
-                className="text-xs text-red-400 hover:bg-red-400/10 px-2 py-1 rounded"
-              >
-                Stop
-              </button>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="w-full h-1 bg-white/10 dark:bg-black/10 rounded-full mb-4">
-              <div
-                className="h-full bg-lime-400 rounded-full transition-all duration-300"
-                style={{ width: `${getProgressPercentage()}%` }}
-              ></div>
-            </div>
-
-            {/* Current Step */}
-            {activeRoutine.steps && activeRoutine.steps[currentStepIndex] && (
-              <div className="bg-white/5 dark:bg-black/5 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <div className="text-sm text-muted-foreground">Current Step</div>
-                    <div className="text-lg font-semibold">
-                      {activeRoutine.steps[currentStepIndex].title}
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold text-accent">
-                    {formatTime(timeLeft)}
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Step {currentStepIndex + 1} of {activeRoutine.steps.length}
-                </div>
-              </div>
-            )}
-
-            {/* Controls */}
-            <div className="flex items-center justify-center space-x-4 mb-6">
-              <button
-                onClick={handlePauseResume}
-                className={`px-6 py-3 rounded-full font-bold transition-all ${
-                  timer === null
-                    ? "bg-lime-400 hover:bg-lime-400/90"
-                    : "bg-rose-400 hover:bg-rose-400/90"
-                } text-black flex items-center space-x-2`}
-              >
-                {timer === null ? (
-                  <>
-                    <Play size={20} />
-                    <span>Resume</span>
-                  </>
-                ) : (
-                  <>
-                    <Pause size={20} />
-                    <span>Pause</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleSkipStep}
-                className="px-6 py-3 rounded-full bg-white/10 dark:bg-black/10 hover:bg-white/20 dark:hover:bg-black/20 flex items-center space-x-2"
-              >
-                <SkipForward size={20} />
-                <span>Skip</span>
-              </button>
-            </div>
-
-            {/* Steps List */}
-            {activeRoutine.steps && (
-              <div className="flex-1 overflow-y-auto">
-                <div className="text-xs font-semibold text-muted-foreground mb-2">
-                  Steps ({activeRoutine.steps.length})
-                </div>
-                <div className="space-y-2">
-                  {activeRoutine.steps.map((step: any, index: number) => (
-                    <div
-                      key={index}
-                      className={`p-3 rounded-md flex items-center justify-between ${
-                        index < currentStepIndex
-                          ? "bg-white/5 dark:bg-black/5 opacity-50"
-                          : index === currentStepIndex
-                          ? "bg-lime-400/10 dark:bg-lime-400/5 border border-lime-400/30"
-                          : "bg-white/5 dark:bg-black/5"
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        {index < currentStepIndex ? (
-                          <div className="h-6 w-6 flex items-center justify-center bg-lime-400/20 rounded-full">
-                            <Check size={12} className="text-accent" />
-                          </div>
-                        ) : (
-                          <div className="h-6 w-6 flex items-center justify-center border border-white/30 dark:border-black/30 rounded-full">
-                            {index + 1}
-                          </div>
-                        )}
-                        <span>{step.title}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {step.duration_minutes} min
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Available Routines */
-        <div className="flex-1 flex flex-col">
-          <div className="mb-4 text-sm text-muted-foreground">
-            Active routines for {today}
-          </div>
-
-          {routines.filter((routine) => routine.days_active?.includes(today)).length > 0 ? (
-            <div className="space-y-3 mb-6">
-              {routines
-                .filter((routine) => routine.days_active?.includes(today))
-                .map((routine) => (
-                  <div
-                    key={routine.id}
-                    className="p-3 rounded-md bg-white/5 dark:bg-black/5 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="font-semibold">{routine.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {routine.steps?.length || 0} steps ·{" "}
-                        {routine.steps?.reduce((sum: number, step: any) => sum + step.duration_minutes, 0) || 0}{" "}
-                        minutes
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleStartRoutine(routine)}
-                        className="px-3 py-2 rounded-md bg-lime-400 text-black text-xs font-medium hover:bg-lime-400/90"
-                      >
-                        Start
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRoutine(routine.id)}
-                        className="p-2 rounded-md hover:bg-red-500/20 text-red-400"
-                        aria-label="Delete routine"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-              <GitBranch size={32} className="text-muted-foreground" />
-              <p className="text-sm text-muted-foreground text-center">
-                No routines scheduled for today
-              </p>
-              <p className="text-xs text-muted-foreground max-w-[200px] text-center">
-                Create a routine with steps and set which days it runs.
-              </p>
-            </div>
-          )}
-
-          {/* Create New Routine */}
-          {!showNewRoutine ? (
+      {/* Day tabs */}
+      <div className="mb-3 grid grid-cols-7 gap-1">
+        {DAYS.map((d, i) => {
+          const count = blocks.filter((b) => b.day_of_week === i).length;
+          const isActive = activeDay === i;
+          const isToday = i === today;
+          return (
             <button
-              onClick={() => setShowNewRoutine(true)}
-              className="mt-auto flex items-center space-x-2 p-3 rounded-md bg-white/5 dark:bg-black/5 hover:bg-white/10 dark:hover:bg-black/10 text-accent font-medium"
+              key={d}
+              onClick={() => setActiveDay(i)}
+              className={`relative rounded-md py-1.5 text-[11px] font-medium transition-colors ${
+                isActive
+                  ? "bg-lime-400 text-black"
+                  : isToday
+                    ? "bg-lime-400/10 text-lime-400"
+                    : "bg-white/5 dark:bg-black/5 text-muted-foreground hover:bg-white/10 dark:hover:bg-black/10"
+              }`}
             >
-              <Plus size={16} />
-              <span>Create new routine</span>
+              {d}
+              {count > 0 && (
+                <span
+                  className={`absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold ${
+                    isActive ? "bg-black text-lime-400" : "bg-lime-400 text-black"
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
             </button>
-          ) : (
-            <form onSubmit={handleCreateRoutine} className="mt-auto space-y-3 p-4 bg-white/5 dark:bg-black/5 rounded-lg">
-              <input
-                type="text"
-                value={newRoutineName}
-                onChange={(e) => setNewRoutineName(e.target.value)}
-                placeholder="Routine name"
-                className="w-full px-3 py-2 rounded-md bg-white/10 dark:bg-black/10 border border-white/10 text-sm focus:outline-none focus:border-lime-400"
-                autoFocus
+          );
+        })}
+      </div>
+
+      {/* Blocks for the selected day */}
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        {loading ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="loading-spinner" />
+          </div>
+        ) : dayBlocks.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+            <GitBranch size={22} className="text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No blocks for {DAYS[activeDay]}.</p>
+            <p className="text-xs text-muted-foreground">Add one to start building the week.</p>
+          </div>
+        ) : (
+          dayBlocks.map((block) => (
+            <div
+              key={block.id}
+              className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-2.5 transition-colors hover:bg-white/10 dark:border-black/10 dark:bg-black/5 dark:hover:bg-black/10"
+            >
+              <span
+                className="h-8 w-1 shrink-0 rounded-full"
+                style={{ backgroundColor: block.color || "#6366f1" }}
               />
-              <textarea
-                value={newRoutineSteps}
-                onChange={(e) => setNewRoutineSteps(e.target.value)}
-                placeholder="Steps (one per line)\nExample:\nMeditation: 10\nExercise: 20\nBreakfast: 15"
-                className="w-full px-3 py-2 rounded-md bg-white/10 dark:bg-black/10 border border-white/10 text-sm focus:outline-none focus:border-lime-400 h-32 resize-none"
-              />
-              <div className="flex space-x-2">
-                <button
-                  type="submit"
-                  disabled={!newRoutineName.trim() || !newRoutineSteps.trim() || loading}
-                  className="flex-1 px-3 py-2 rounded-md bg-lime-400 text-black text-sm font-medium hover:bg-lime-400/90 disabled:opacity-50"
-                >
-                  {loading ? "Creating..." : "Create"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewRoutine(false);
-                    setNewRoutineName("");
-                    setNewRoutineSteps("");
-                  }}
-                  className="flex-1 px-3 py-2 rounded-md border border-white/10 text-sm font-medium hover:bg-white/5"
-                >
-                  Cancel
-                </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{block.title}</p>
+                <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Clock size={9} />
+                  {formatTime(block.start_time)} - {endTime(block)}
+                </p>
               </div>
-            </form>
-          )}
-        </div>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{block.duration_minutes}m</span>
+              <button
+                onClick={() => handleDelete(block.id)}
+                className="hidden shrink-0 rounded p-1 text-red-400 hover:bg-red-500/20 group-hover:block"
+                aria-label="Delete block"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {showModal && (
+        <AddBlockModal
+          onClose={() => setShowModal(false)}
+          onAdded={() => {
+            setShowModal(false);
+            loadBlocks();
+          }}
+          store={store}
+          defaultDay={activeDay}
+        />
       )}
+    </div>
+  );
+}
+
+function AddBlockModal({
+  onClose,
+  onAdded,
+  store,
+  defaultDay,
+}: {
+  onClose: () => void;
+  onAdded: () => void;
+  store: ReturnType<typeof useAppStore>["store"];
+  defaultDay: number;
+}) {
+  const [title, setTitle] = useState("");
+  const [day, setDay] = useState(defaultDay);
+  const [startTime, setStartTime] = useState("09:00");
+  const [duration, setDuration] = useState(30);
+  const [color, setColor] = useState(BLOCK_COLORS[0]);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const s = store;
+    if (!s || !title.trim()) return;
+    setSaving(true);
+    const { error } = await s.insert("routine_blocks", {
+      title: title.trim(),
+      day_of_week: day,
+      start_time: startTime,
+      duration_minutes: duration,
+      color,
+      position: 0,
+    });
+    if (error) console.error("[RoutinesCard] Failed to add block:", error);
+    setSaving(false);
+    if (!error) onAdded();
+  };
+
+  const inputClass =
+    "w-full rounded-md bg-white/10 dark:bg-black/10 border border-white/10 dark:border-black/10 px-3 py-2 text-sm focus:outline-none focus:border-lime-400";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur">
+      <div className="w-full max-w-sm rounded-xl border border-white/10 bg-white p-5 dark:border-black/10 dark:bg-gray-900">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Add routine block</h2>
+          <button
+            onClick={onClose}
+            className="rounded p-1 hover:bg-white/10 dark:hover:bg-black/10"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Morning run, Deep work..."
+            className={inputClass}
+            autoFocus
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Day</label>
+              <select value={day} onChange={(e) => setDay(Number(e.target.value))} className={inputClass}>
+                {DAYS.map((d, i) => (
+                  <option key={d} value={i}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Start</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Duration: {duration} min</label>
+            <input
+              type="range"
+              min={15}
+              max={240}
+              step={15}
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full accent-lime-400"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>15m</span>
+              <span>1h</span>
+              <span>2h</span>
+              <span>4h</span>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs text-muted-foreground">Color</label>
+            <div className="flex gap-2">
+              {BLOCK_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`h-6 w-6 rounded-full transition-transform ${
+                    color === c
+                      ? "scale-125 ring-2 ring-lime-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900"
+                      : ""
+                  }`}
+                  style={{ backgroundColor: c }}
+                  aria-label={`Color ${c}`}
+                />
+              ))}
+            </div>
+          </div>
+          <button type="submit" disabled={!title.trim() || saving} className="button-primary w-full">
+            {saving ? "Adding..." : "Add block"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

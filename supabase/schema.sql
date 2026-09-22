@@ -14,6 +14,7 @@ create table if not exists profiles (
 -- User-facing identity: unique username chosen at sign-up.
 alter table profiles add column if not exists username text;
 create unique index if not exists profiles_username_key on profiles (username);
+
 create table if not exists events (
   id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
   title text not null, description text, start_time timestamptz not null, end_time timestamptz,
@@ -41,6 +42,14 @@ create table if not exists habit_logs (
 create table if not exists routines (
   id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
   name text not null, steps jsonb default '[]', days_active text[], created_at timestamptz default now()
+);
+
+-- Weekly timetable blocks (0 = Monday .. 6 = Sunday, start_time is 'HH:MM')
+create table if not exists routine_blocks (
+  id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
+  title text not null, day_of_week smallint not null check (day_of_week between 0 and 6),
+  start_time text not null, duration_minutes integer not null default 30,
+  color text default '#6366f1', position integer default 0, created_at timestamptz default now()
 );
 create table if not exists pomodoro_sessions (
   id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
@@ -78,12 +87,13 @@ alter table journal_entries enable row level security;
 alter table habits enable row level security;
 alter table habit_logs enable row level security;
 alter table routines enable row level security;
+alter table routine_blocks enable row level security;
 alter table pomodoro_sessions enable row level security;
 
 do $$
 declare table_name text;
 begin
-  foreach table_name in array array['events','todos','journal_entries','habits','habit_logs','routines','pomodoro_sessions']
+  foreach table_name in array array['events','todos','journal_entries','habits','habit_logs','routines','routine_blocks','pomodoro_sessions']
   loop
     execute format('drop policy if exists "Users manage their own %1$s" on %1$I', table_name);
     execute format('create policy "Users manage their own %1$s" on %1$I for all using (auth.uid() = user_id) with check (auth.uid() = user_id)', table_name);

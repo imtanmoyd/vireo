@@ -16,9 +16,11 @@ export type AppSession =
   | { kind: "guest"; guestId: string }
   | { kind: "none" };
 
-/** Placeholder email so Supabase Auth works without asking for a real one. */
+/** Placeholder email so Supabase Auth works without asking for a real one.
+ *  Using a real TLD (.app) prevents GoTrue from rejecting the email as invalid.
+ */
 export function usernameToEmail(username: string): string {
-  return `${username.toLowerCase()}@vireo.local`;
+  return `${username.toLowerCase()}@users.vireo.app`;
 }
 
 export function getGuestId(): string | null {

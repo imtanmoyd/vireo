@@ -1,28 +1,122 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
-import { CheckSquare, Plus, Trash2, Calendar } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  CheckSquare,
+  Plus,
+  Trash2,
+  Calendar,
+  Flag,
+  ChevronDown,
+  ChevronRight,
+  ArrowUp,
+  ArrowDown,
+  AlertTriangle,
+} from "lucide-react";
 import { useAppStore } from "@/lib/data";
+
+interface TodoRow {
+  id: string;
+  title: string;
+  due_date: string | null;
+  is_complete: boolean;
+  priority: number;
+  position: number | null;
+}
+
+type Group = "overdue" | "today" | "tomorrow" | "week" | "later" | "someday";
+
+const GROUP_ORDER: Group[] = ["overdue", "today", "tomorrow", "week", "later", "someday"];
+
+const GROUP_LABEL: Record<Group, string> = {
+  overdue: "Overdue",
+  today: "Today",
+  tomorrow: "Tomorrow",
+  week: "This week",
+  later: "Later",
+  someday: "No date",
+};
+
+const GROUP_TEXT: Record<Group, string> = {
+  overdue: "text-red-400",
+  today: "text-amber-400",
+  tomorrow: "text-blue-400",
+  week: "text-violet-400",
+  later: "text-muted-foreground",
+  someday: "text-muted-foreground",
+};
+
+const GROUP_BADGE: Record<Group, string> = {
+  overdue: "bg-red-500/15 text-red-400 border border-red-500/30",
+  today: "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+  tomorrow: "bg-blue-500/15 text-blue-400 border border-blue-500/30",
+  week: "bg-violet-500/15 text-violet-400 border border-violet-500/30",
+  later: "bg-white/10 text-muted-foreground border border-white/10 dark:border-black/10",
+  someday: "bg-white/5 text-muted-foreground border border-transparent",
+};
+
+const PRIORITY_TEXT: Record<number, string> = {
+  0: "text-muted-foreground",
+  1: "text-amber-400",
+  2: "text-red-400",
+};
+
+function startOfDayMs(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function dayDiff(iso: string): number {
+  return Math.round((startOfDayMs(new Date(iso)) - startOfDayMs(new Date())) / 86400000);
+}
+
+function groupOf(todo: TodoRow): Group {
+  if (!todo.due_date) return "someday";
+  const diff = dayDiff(todo.due_date);
+  if (diff < 0) return "overdue";
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  if (diff <= 7) return "week";
+  return "later";
+}
+
+function formatDue(iso: string): string {
+  const diff = dayDiff(iso);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** 'YYYY-MM-DD' from a date input -> end-of-day ISO timestamp. */
+function dueInputToIso(input: string): string | null {
+  if (!input) return null;
+  const d = new Date(`${input}T23:59:59`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function sortTodos(a: TodoRow, b: TodoRow): number {
+  const pa = a.position ?? 0;
+  const pb = b.position ?? 0;
+  if (pa !== pb) return pa - pb;
+  return (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999");
+}
 
 export function TodoCard() {
   const { store, ownerId } = useAppStore();
-  const [todos, setTodos] = useState<any[]>([]);
+  const [todos, setTodos] = useState<TodoRow[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newTodoTitle, setNewTodoTitle] = useState("");
-  const [newTodoDueDate, setNewTodoDueDate] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [dueInput, setDueInput] = useState("");
+  const [priority, setPriority] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<Group>>(new Set());
+  const [showDone, setShowDone] = useState(false);
 
-  // Load todos from the data store (Supabase for accounts, local for guests)
-  useEffect(() => {
-    if (!store || !ownerId) return;
-    loadTodos();
-  }, [store, ownerId]);
-
-  const loadTodos = async () => {
+  const loadTodos = useCallback(async () => {
     const s = store;
-    if (!s) return;
+    if (!s || !ownerId) return;
     try {
-      const rows = await s.list("todos", {
+      const rows = await s.list<TodoRow>("todos", {
         order: [
           { column: "position", ascending: true },
           { column: "created_at", ascending: false },
@@ -32,226 +126,313 @@ export function TodoCard() {
     } catch (e) {
       console.error("[TodoCard] Failed to load todos:", e);
     }
-  };
+  }, [store, ownerId]);
+
+  useEffect(() => {
+    loadTodos();
+  }, [loadTodos]);
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     const s = store;
-    if (!s || !newTodoTitle.trim()) return;
-
-    setLoading(true);
-    const maxPosition = todos.length > 0 ? Math.max(...todos.map(t => t.position || 0)) : 0;
-
+    if (!s || !title.trim()) return;
+    setSaving(true);
+    const maxPosition = todos.length > 0 ? Math.max(...todos.map((t) => t.position ?? 0)) : 0;
     const { error } = await s.insert("todos", {
-      title: newTodoTitle,
-      due_date: newTodoDueDate || null,
+      title: title.trim(),
+      due_date: dueInputToIso(dueInput),
       position: maxPosition + 1,
       is_complete: false,
-      priority: 0
+      priority,
+    });
+    if (error) console.error("[TodoCard] Failed to add todo:", error);
+    setTitle("");
+    setDueInput("");
+    setPriority(1);
+    setIsAdding(false);
+    setSaving(false);
+    await loadTodos();
+  };
+
+  const handleToggle = async (todo: TodoRow) => {
+    const s = store;
+    if (!s) return;
+    const { error } = await s.update("todos", todo.id, { is_complete: !todo.is_complete });
+    if (error) console.error("[TodoCard] Failed to update todo:", error);
+    else await loadTodos();
+  };
+
+  const handleDelete = async (id: string) => {
+    const s = store;
+    if (!s) return;
+    const { error } = await s.remove("todos", id);
+    if (error) console.error("[TodoCard] Failed to delete todo:", error);
+    else await loadTodos();
+  };
+
+  const handleReorder = async (groupItems: TodoRow[], todo: TodoRow, dir: "up" | "down") => {
+    const s = store;
+    if (!s) return;
+    const index = groupItems.findIndex((t) => t.id === todo.id);
+    if (index === -1) return;
+    const neighbor = dir === "up" ? groupItems[index - 1] : groupItems[index + 1];
+    if (!neighbor) return;
+    const aPos = todo.position ?? groupItems.indexOf(todo);
+    const bPos = neighbor.position ?? groupItems.indexOf(neighbor);
+    await s.update("todos", todo.id, { position: bPos });
+    await s.update("todos", neighbor.id, { position: aPos });
+    await loadTodos();
+  };
+
+  const grouped = useMemo(() => {
+    const map = {} as Record<Group, TodoRow[]>;
+    for (const g of GROUP_ORDER) map[g] = [];
+    for (const t of todos) {
+      if (!t.is_complete) map[groupOf(t)].push(t);
+    }
+    for (const g of GROUP_ORDER) map[g].sort(sortTodos);
+    return map;
+  }, [todos]);
+
+  const completed = todos.filter((t) => t.is_complete);
+  const overdueCount = grouped.overdue.length;
+  const remaining = todos.filter((t) => !t.is_complete).length;
+
+  const toggleGroup = (g: Group) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(g)) next.delete(g);
+      else next.add(g);
+      return next;
     });
 
-    if (error) {
-      console.error("[TodoCard] Failed to add todo:", error);
-    } else {
-      setNewTodoTitle("");
-      setNewTodoDueDate("");
-      setIsAdding(false);
-      await loadTodos();
-    }
-    setLoading(false);
-  };
-
-  const handleToggleTodo = async (todoId: string, isComplete: boolean) => {
-    const s = store;
-    if (!s) return;
-
-    const { error } = await s.update("todos", todoId, { is_complete: !isComplete });
-    if (error) {
-      console.error("[TodoCard] Failed to update todo:", error);
-    } else {
-      await loadTodos();
-    }
-  };
-
-  const handleDeleteTodo = async (todoId: string) => {
-    const s = store;
-    if (!s) return;
-
-    const { error } = await s.remove("todos", todoId);
-    if (error) {
-      console.error("[TodoCard] Failed to delete todo:", error);
-    } else {
-      await loadTodos();
-    }
-  };
-
-  const handleReorderTodos = async (todoId: string, direction: "up" | "down") => {
-    const s = store;
-    if (!s) return;
-
-    const index = todos.findIndex(t => t.id === todoId);
-    if (index === -1) return;
-    if (direction === "up" && index === 0) return;
-    if (direction === "down" && index === todos.length - 1) return;
-
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    const newTodos = [...todos];
-    [newTodos[index], newTodos[newIndex]] = [newTodos[newIndex], newTodos[index]];
-
-    // Update positions in the store
-    for (let i = 0; i < newTodos.length; i++) {
-      await s.update("todos", newTodos[i].id, { position: i });
-    }
-
-    setTodos(newTodos);
-  };
-
-  const formatDueDate = (dueDate: string) => {
-    if (!dueDate) return "";
-    const date = new Date(dueDate);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
-
-  const completedCount = todos.filter(t => t.is_complete).length;
+  const inputClass =
+    "w-full rounded-md bg-white/10 dark:bg-black/10 border border-white/10 dark:border-black/10 px-3 py-2 text-sm focus:outline-none focus:border-lime-400";
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <div className="h-8 w-8 flex items-center justify-center bg-violet-400/20 dark:bg-violet-400/10 rounded-lg">
-            <CheckSquare size={18} className="text-violet-400" />
-          </div>
-          <span className="font-semibold text-lg">Today's Todos</span>
-        </div>
-        <span className="text-sm font-medium text-accent">{completedCount}/{todos.length}</span>
-      </div>
-
-      {/* Todo List */}
-      <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-        {todos.length === 0 && !isAdding && (
-          <div className="flex flex-col items-center justify-center h-full space-y-3 py-8">
-            <CheckSquare size={32} className="text-muted-foreground" />
-            <p className="text-sm text-muted-foreground text-center">
-              No todos yet
-            </p>
-            <p className="text-xs text-muted-foreground max-w-[200px] text-center">
-              Add your first task below to start planning your day.
-            </p>
-          </div>
-        )}
-
-        {todos.map((todo, index) => (
-          <div
-            key={todo.id}
-            className="group flex items-center space-x-3 p-2 rounded-md hover:bg-white/5 dark:hover:bg-black/5 transition-all"
-          >
-            <button
-              onClick={() => handleToggleTodo(todo.id, todo.is_complete)}
-              className={`flex-shrink-0 w-5 h-5 rounded border-2 transition-all flex items-center justify-center
-                ${todo.is_complete
-                  ? "bg-lime-400 border-lime-400"
-                  : "border-white/30 dark:border-black/30 hover:border-lime-400"}`}
-            >
-              {todo.is_complete && <span className="text-black text-sm">✓</span>}
-            </button>
-
-            <div className="flex-1 min-w-0">
-              <span
-                className={`text-sm transition-all ${
-                  todo.is_complete
-                    ? "line-through text-muted-foreground"
-                    : "text-foreground"
-                }`}
-              >
-                {todo.title}
-              </span>
-            </div>
-
-            {todo.due_date && (
-              <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                <Calendar size={12} />
-                <span>{formatDueDate(todo.due_date)}</span>
-              </div>
-            )}
-
-            <div className="hidden group-hover:flex items-center space-x-1">
-              <button
-                onClick={() => handleReorderTodos(todo.id, "up")}
-                disabled={index === 0}
-                className="p-1 rounded hover:bg-white/10 disabled:opacity-30"
-                aria-label="Move up"
-              >
-                ↑
-              </button>
-              <button
-                onClick={() => handleReorderTodos(todo.id, "down")}
-                disabled={index === todos.length - 1}
-                className="p-1 rounded hover:bg-white/10 disabled:opacity-30"
-                aria-label="Move down"
-              >
-                ↓
-              </button>
-              <button
-                onClick={() => handleDeleteTodo(todo.id)}
-                className="p-1 rounded hover:bg-red-500/20 text-red-400"
-                aria-label="Delete todo"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Add Todo Form */}
-      {!isAdding && (
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {remaining} open
+          {overdueCount > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1 font-medium text-red-400">
+              <AlertTriangle size={11} />
+              {overdueCount} overdue
+            </span>
+          )}
+        </p>
         <button
-          onClick={() => setIsAdding(true)}
-          className="flex items-center space-x-2 p-2 rounded-md text-accent hover:bg-lime-400/10 transition-all"
+          onClick={() => setIsAdding((v) => !v)}
+          className="flex items-center gap-1 rounded-md p-1.5 text-xs font-medium text-accent hover:bg-lime-400/10"
         >
-          <Plus size={16} />
-          <span className="text-sm font-medium">Add todo</span>
+          <Plus size={14} />
+          Add
         </button>
-      )}
+      </div>
 
       {isAdding && (
-        <form onSubmit={handleAddTodo} className="space-y-2">
+        <form onSubmit={handleAddTodo} className="mb-3 space-y-2 rounded-lg bg-white/5 dark:bg-black/5 p-3">
           <input
             type="text"
-            value={newTodoTitle}
-            onChange={(e) => setNewTodoTitle(e.target.value)}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="What needs to be done?"
-            className="w-full px-3 py-2 rounded-md bg-white/10 dark:bg-black/10 border border-white/10 text-sm focus:outline-none focus:border-lime-400"
+            className={inputClass}
             autoFocus
           />
-          <input
-            type="date"
-            value={newTodoDueDate}
-            onChange={(e) => setNewTodoDueDate(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-white/10 dark:bg-black/10 border border-white/10 text-sm focus:outline-none focus:border-lime-400"
-          />
-          <div className="flex space-x-2">
-            <button
-              type="submit"
-              disabled={!newTodoTitle.trim() || loading}
-              className="flex-1 px-3 py-2 rounded-md bg-lime-400 text-black text-sm font-medium hover:bg-lime-400/90 disabled:opacity-50"
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={dueInput}
+              onChange={(e) => setDueInput(e.target.value)}
+              className={inputClass}
+              aria-label="Due date"
+            />
+            <select
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+              className={`${inputClass} w-28`}
+              aria-label="Priority"
             >
+              <option value={0}>Low</option>
+              <option value={1}>Medium</option>
+              <option value={2}>High</option>
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={!title.trim() || saving} className="button-primary flex-1">
               Add
             </button>
             <button
               type="button"
               onClick={() => {
                 setIsAdding(false);
-                setNewTodoTitle("");
-                setNewTodoDueDate("");
+                setTitle("");
+                setDueInput("");
               }}
-              className="flex-1 px-3 py-2 rounded-md border border-white/10 text-sm font-medium hover:bg-white/5"
+              className="button-secondary flex-1"
             >
               Cancel
             </button>
           </div>
         </form>
       )}
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+        {todos.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+            <CheckSquare size={24} className="text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Nothing yet.</p>
+            <p className="text-xs text-muted-foreground">Add your first task above.</p>
+          </div>
+        ) : (
+          <>
+            {GROUP_ORDER.map((g) => {
+              const items = grouped[g];
+              if (items.length === 0) return null;
+              const isOpen = !collapsed.has(g);
+              return (
+                <section key={g}>
+                  <button onClick={() => toggleGroup(g)} className="mb-1 flex w-full items-center gap-1.5">
+                    {isOpen ? (
+                      <ChevronDown size={12} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronRight size={12} className="text-muted-foreground" />
+                    )}
+                    <span className={`text-[11px] font-bold uppercase tracking-wider ${GROUP_TEXT[g]}`}>
+                      {GROUP_LABEL[g]}
+                    </span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${GROUP_BADGE[g]}`}>
+                      {items.length}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="space-y-1">
+                      {items.map((todo) => (
+                        <TodoRowItem
+                          key={todo.id}
+                          todo={todo}
+                          group={g}
+                          groupItems={items}
+                          onToggle={handleToggle}
+                          onDelete={handleDelete}
+                          onReorder={handleReorder}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+
+            {completed.length > 0 && (
+              <section className="pt-1">
+                <button onClick={() => setShowDone((v) => !v)} className="mb-1 flex w-full items-center gap-1.5">
+                  {showDone ? (
+                    <ChevronDown size={12} className="text-muted-foreground" />
+                  ) : (
+                    <ChevronRight size={12} className="text-muted-foreground" />
+                  )}
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Done</span>
+                  <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {completed.length}
+                  </span>
+                </button>
+                {showDone && (
+                  <div className="space-y-1 opacity-60">
+                    {completed.map((todo) => (
+                      <div key={todo.id} className="group flex items-center gap-2.5 rounded-lg p-2 hover:bg-white/5 dark:hover:bg-black/5">
+                        <button
+                          onClick={() => handleToggle(todo)}
+                          className="shrink-0 text-accent"
+                          aria-label="Mark as not done"
+                        >
+                          <CheckSquare size={16} />
+                        </button>
+                        <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground line-through">
+                          {todo.title}
+                        </p>
+                        <button
+                          onClick={() => handleDelete(todo.id)}
+                          className="hidden shrink-0 rounded p-1 text-red-400 hover:bg-red-500/20 group-hover:block"
+                          aria-label="Delete todo"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface RowItemProps {
+  todo: TodoRow;
+  group: Group;
+  groupItems: TodoRow[];
+  onToggle: (todo: TodoRow) => void;
+  onDelete: (id: string) => void;
+  onReorder: (groupItems: TodoRow[], todo: TodoRow, dir: "up" | "down") => void;
+}
+
+function TodoRowItem({ todo, group, groupItems, onToggle, onDelete, onReorder }: RowItemProps) {
+  const index = groupItems.findIndex((t) => t.id === todo.id);
+  return (
+    <div className="group flex items-start gap-2.5 rounded-lg p-2 hover:bg-white/5 dark:hover:bg-black/5">
+      <button
+        onClick={() => onToggle(todo)}
+        className="mt-0.5 shrink-0 text-muted-foreground hover:text-accent"
+        aria-label="Toggle complete"
+      >
+        <CheckSquare size={15} className="opacity-50" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{todo.title}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {todo.due_date && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                GROUP_BADGE[group]
+              }`}
+            >
+              <Calendar size={9} />
+              {formatDue(todo.due_date)}
+            </span>
+          )}
+          <Flag size={10} className={PRIORITY_TEXT[todo.priority] ?? "text-muted-foreground"} />
+        </div>
+      </div>
+      <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+        <button
+          onClick={() => onReorder(groupItems, todo, "up")}
+          disabled={index === 0}
+          className="rounded p-1 text-muted-foreground hover:bg-white/10 disabled:opacity-30"
+          aria-label="Move up"
+        >
+          <ArrowUp size={12} />
+        </button>
+        <button
+          onClick={() => onReorder(groupItems, todo, "down")}
+          disabled={index === groupItems.length - 1}
+          className="rounded p-1 text-muted-foreground hover:bg-white/10 disabled:opacity-30"
+          aria-label="Move down"
+        >
+          <ArrowDown size={12} />
+        </button>
+        <button
+          onClick={() => onDelete(todo.id)}
+          className="rounded p-1 text-red-400 hover:bg-red-500/20"
+          aria-label="Delete todo"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
     </div>
   );
 }

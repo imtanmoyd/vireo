@@ -19,6 +19,7 @@ export type DataTable =
   | "journal_entries"
   | "events"
   | "routines"
+  | "routine_blocks"
   | "pomodoro_sessions";
 
 export type Row = Record<string, any> & { id: string };
