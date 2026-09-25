@@ -1,72 +1,21 @@
-"use client";
+﻿"use client";
 
 // TEMPORARY: guest mode — remove once core app is stable.
 // The "Continue without an account" section of this panel is part of the
 // temporary guest feature.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ghost, LoaderCircle, LogIn, UserPlus } from "lucide-react";
-import {
-  USERNAME_HINT,
-  USERNAME_PATTERN,
-  createGuestSession,
-  signInWithUsername,
-  signUpWithUsername,
-} from "@/lib/auth";
-import { scorePassword } from "@/lib/password-strength";
+import { createGuestSession, signIn, signUp } from "@/lib/auth";
 
 type Mode = "signup" | "login";
-
-const STRENGTH_COLORS = ["#ef4444", "#fb923c", "#84cc16", "#22c55e"];
-
-function StrengthMeter({
-  password,
-  username,
-}: {
-  password: string;
-  username: string;
-}) {
-  const strength = useMemo(
-    () => scorePassword(password, username || undefined),
-    [password, username],
-  );
-
-  return (
-    <div className="strength">
-      <div className="strength-track" aria-hidden="true">
-        {[0, 1, 2, 3].map((segment) => (
-          <span
-            key={segment}
-            className="strength-segment"
-            style={
-              segment <= strength.score && password.length > 0
-                ? { background: STRENGTH_COLORS[strength.score] }
-                : undefined
-            }
-          />
-        ))}
-      </div>
-      <div className="strength-meta">
-        <span>
-          {password.length === 0
-            ? "Use 8+ characters with a mix of letters, numbers and symbols."
-            : strength.score < 2
-              ? "Choose a stronger password to continue."
-              : `Password strength: ${strength.label}`}
-        </span>
-        <span>{strength.label}</span>
-      </div>
-    </div>
-  );
-}
 
 export function AuthPanel() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signup");
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState<null | "auth" | "guest">(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,47 +26,20 @@ export function AuthPanel() {
   }, []);
 
   const isSignup = mode === "signup";
-  const normalizedUsername = username.trim().toLowerCase();
-  const usernameValid = USERNAME_PATTERN.test(normalizedUsername);
-  const strength = useMemo(
-    () => scorePassword(password, normalizedUsername || undefined),
-    [password, normalizedUsername],
-  );
-  const passwordsMatch = password === confirm;
-  const strengthOk = strength.score >= 2; // Good or Strong
-
-  const fieldErrors: string[] = [];
-  if (username.length > 0 && !usernameValid) {
-    fieldErrors.push(`Invalid username. ${USERNAME_HINT}`);
-  }
-  if (isSignup && confirm.length > 0 && !passwordsMatch) {
-    fieldErrors.push("Passwords don't match.");
-  }
-  if (isSignup && password.length > 0 && !strengthOk) {
-    fieldErrors.push("Choose a stronger password to continue.");
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (!usernameValid) {
-      setError(`Invalid username. ${USERNAME_HINT}`);
-      return;
-    }
-    if (isSignup && !strengthOk) {
-      setError("Choose a stronger password to continue.");
-      return;
-    }
-    if (isSignup && !passwordsMatch) {
-      setError("Passwords don't match.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
     setSubmitting("auth");
     const result = isSignup
-      ? await signUpWithUsername(normalizedUsername, password)
-      : await signInWithUsername(normalizedUsername, password);
+      ? await signUp(identifier, password)
+      : await signIn(identifier, password);
     setSubmitting(null);
 
     if (result.error) {
@@ -141,23 +63,48 @@ export function AuthPanel() {
     <div className="auth-grid">
       {/* Primary: sign up / log in */}
       <form className="auth-card" onSubmit={handleSubmit}>
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={isSignup ? "auth-tab active" : "auth-tab"}
+            onClick={() => {
+              setMode("signup");
+              setError(null);
+            }}
+          >
+            <UserPlus size={14} />
+            Sign up
+          </button>
+          <button
+            type="button"
+            className={!isSignup ? "auth-tab active" : "auth-tab"}
+            onClick={() => {
+              setMode("login");
+              setError(null);
+            }}
+          >
+            <LogIn size={14} />
+            Log in
+          </button>
+        </div>
+
         <h2>{isSignup ? "Create your account" : "Welcome back"}</h2>
         <p className="auth-sub">
           {isSignup
-            ? "Pick a username and a strong password. No email required."
-            : "Log in with the username and password you chose."}
+            ? "One field, one password. Use an email or just a username."
+            : "Log in with the email or username you chose."}
         </p>
 
         <div className="auth-field">
-          <label htmlFor="auth-username">Username</label>
+          <label htmlFor="auth-identifier">Email or username</label>
           <input
-            id="auth-username"
+            id="auth-identifier"
             type="text"
             className="auth-input"
-            placeholder="e.g. river"
+            placeholder="you@email.com or river"
             autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             autoCapitalize="none"
             spellCheck={false}
           />
@@ -169,34 +116,16 @@ export function AuthPanel() {
             id="auth-password"
             type="password"
             className="auth-input"
-            placeholder="••••••••••••"
+            placeholder="At least 8 characters"
             autoComplete={isSignup ? "new-password" : "current-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          {isSignup && (
-            <StrengthMeter password={password} username={normalizedUsername} />
-          )}
         </div>
 
-        {isSignup && (
-          <div className="auth-field">
-            <label htmlFor="auth-confirm">Confirm password</label>
-            <input
-              id="auth-confirm"
-              type="password"
-              className="auth-input"
-              placeholder="Repeat the password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-            />
-          </div>
-        )}
-
-        {(fieldErrors.length > 0 || error) && (
+        {error && (
           <p className="auth-error" role="alert">
-            {error ?? fieldErrors[0]}
+            {error}
           </p>
         )}
 
@@ -208,20 +137,7 @@ export function AuthPanel() {
           ) : (
             <LogIn size={18} />
           )}
-          {isSignup ? "Sign up" : "Log in"}
-        </button>
-
-        <button
-          type="button"
-          className="auth-switch"
-          onClick={() => {
-            setMode(isSignup ? "login" : "signup");
-            setError(null);
-          }}
-        >
-          {isSignup
-            ? "Already have an account? Log in"
-            : "New to Vireo? Sign up"}
+          {isSignup ? "Create account" : "Log in"}
         </button>
       </form>
 
@@ -253,4 +169,3 @@ export function AuthPanel() {
     </div>
   );
 }
-

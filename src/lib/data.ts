@@ -20,6 +20,7 @@ export type DataTable =
   | "events"
   | "routines"
   | "routine_blocks"
+  | "routine_block_logs"
   | "pomodoro_sessions";
 
 export type Row = Record<string, any> & { id: string };

@@ -51,6 +51,16 @@ create table if not exists routine_blocks (
   start_time text not null, duration_minutes integer not null default 30,
   color text default '#6366f1', position integer default 0, created_at timestamptz default now()
 );
+-- Track completion of calendar events
+alter table events add column if not exists completed boolean default false;
+
+-- Per-day completion records for routine blocks
+create table if not exists routine_block_logs (
+  id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
+  block_id uuid references routine_blocks on delete cascade not null, completed_date date not null,
+  created_at timestamptz default now(), unique (block_id, completed_date)
+);
+
 create table if not exists pomodoro_sessions (
   id uuid primary key default gen_random_uuid(), user_id uuid references auth.users on delete cascade not null,
   started_at timestamptz not null, duration_minutes integer not null, type text,
@@ -88,12 +98,13 @@ alter table habits enable row level security;
 alter table habit_logs enable row level security;
 alter table routines enable row level security;
 alter table routine_blocks enable row level security;
+alter table routine_block_logs enable row level security;
 alter table pomodoro_sessions enable row level security;
 
 do $$
 declare table_name text;
 begin
-  foreach table_name in array array['events','todos','journal_entries','habits','habit_logs','routines','routine_blocks','pomodoro_sessions']
+  foreach table_name in array array['events','todos','journal_entries','habits','habit_logs','routines','routine_blocks','routine_block_logs','pomodoro_sessions']
   loop
     execute format('drop policy if exists "Users manage their own %1$s" on %1$I', table_name);
     execute format('create policy "Users manage their own %1$s" on %1$I for all using (auth.uid() = user_id) with check (auth.uid() = user_id)', table_name);

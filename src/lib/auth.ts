@@ -1,4 +1,4 @@
-// TEMPORARY: guest mode — remove once core app is stable.
+﻿// TEMPORARY: guest mode — remove once core app is stable.
 // The guest-session helpers in this file (getGuestId / createGuestSession /
 // clearGuestId and the "guest" branch of AppSession) exist only for the
 // temporary guest feature and should be deleted together with the rest of
@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export const USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,22}[a-z0-9])$/;
 export const USERNAME_HINT = "3-24 characters: a-z, 0-9, dash or underscore.";
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const GUEST_ID_KEY = "vireo-guest-id";
 
@@ -21,6 +22,43 @@ export type AppSession =
  */
 export function usernameToEmail(username: string): string {
   return `${username.toLowerCase()}@users.vireo.app`;
+}
+
+/** Derive a valid username from an email local-part (slugified). */
+export function usernameFromEmail(email: string): string | null {
+  const slug = email
+    .split("@")[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+  return USERNAME_PATTERN.test(slug) ? slug : null;
+}
+
+export type ParsedIdentifier =
+  | { kind: "email"; email: string; username: string }
+  | { kind: "username"; username: string; email: string }
+  | { kind: "invalid"; reason: string };
+
+/** Accepts either an email address or a plain username. */
+export function parseIdentifier(raw: string): ParsedIdentifier {
+  const value = raw.trim();
+  if (!value) return { kind: "invalid", reason: "Enter your email or username." };
+  if (value.includes("@")) {
+    if (!EMAIL_PATTERN.test(value)) {
+      return { kind: "invalid", reason: "That doesn't look like a valid email address." };
+    }
+    const username = usernameFromEmail(value);
+    if (!username) {
+      return { kind: "invalid", reason: `Can't derive a username from that email. ${USERNAME_HINT}` };
+    }
+    return { kind: "email", email: value.toLowerCase(), username };
+  }
+  const username = value.toLowerCase();
+  if (!USERNAME_PATTERN.test(username)) {
+    return { kind: "invalid", reason: `Invalid username. ${USERNAME_HINT}` };
+  }
+  return { kind: "username", username, email: usernameToEmail(username) };
 }
 
 export function getGuestId(): string | null {
@@ -67,20 +105,27 @@ export interface AuthResult {
   error: string | null;
 }
 
-export async function signUpWithUsername(
-  username: string,
+/** Sign up with either an email address or a username (plus a password). */
+export async function signUp(
+  identifier: string,
   password: string,
 ): Promise<AuthResult> {
+  const parsed = parseIdentifier(identifier);
+  if (parsed.kind === "invalid") return { error: parsed.reason };
+  if (password.length < 8) {
+    return { error: "Password must be at least 8 characters." };
+  }
+
   const supabase = createClient();
   const { data, error } = await supabase.auth.signUp({
-    email: usernameToEmail(username),
+    email: parsed.email,
     password,
-    options: { data: { username, display_name: username } },
+    options: { data: { username: parsed.username, display_name: parsed.username } },
   });
 
   if (error) {
     if (/already registered/i.test(error.message)) {
-      return { error: "That username is already taken. Try another one." };
+      return { error: "That account already exists. Try logging in instead." };
     }
     return { error: error.message };
   }
@@ -98,7 +143,7 @@ export async function signUpWithUsername(
   // keeps sign-up working even if the trigger hasn't been installed yet.
   const { error: profileError } = await supabase
     .from("profiles")
-    .upsert({ id: data.user.id, username, display_name: username });
+    .upsert({ id: data.user.id, username: parsed.username, display_name: parsed.username });
   if (profileError) {
     console.error("[auth] Failed to create profile:", profileError.message);
   }
@@ -106,19 +151,23 @@ export async function signUpWithUsername(
   return { error: null };
 }
 
-export async function signInWithUsername(
-  username: string,
+/** Log in with either an email address or a username (plus a password). */
+export async function signIn(
+  identifier: string,
   password: string,
 ): Promise<AuthResult> {
+  const parsed = parseIdentifier(identifier);
+  if (parsed.kind === "invalid") return { error: parsed.reason };
+
   const supabase = createClient();
   const { error } = await supabase.auth.signInWithPassword({
-    email: usernameToEmail(username),
+    email: parsed.email,
     password,
   });
 
   if (error) {
     if (/invalid login credentials/i.test(error.message)) {
-      return { error: "Wrong username or password." };
+      return { error: "Wrong email/username or password." };
     }
     if (/not confirmed/i.test(error.message)) {
       return {
